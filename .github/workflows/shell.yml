@@ -1,0 +1,19 @@
+name: shell
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: bash -n install.sh bash/*.sh
+      - name: ShellCheck
+        run: shellcheck install.sh bash/*.sh
+      - name: Installer flags
+        run: |
+          ./install.sh --help >/dev/null
+          ./install.sh --dry-run | grep -q 'Dry run: no changes made.'

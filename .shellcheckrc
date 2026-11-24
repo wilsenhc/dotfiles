@@ -1,0 +1,5 @@
+# Sourced fragments, not standalone scripts.
+shell=bash
+# "~" in quoted messages is intentional; log redirects write to user-owned
+# temp dirs, so sudo does not need to own them.
+disable=SC2088,SC2024
