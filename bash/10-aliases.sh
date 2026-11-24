@@ -469,7 +469,69 @@ update-user-tools() {
   rm -rf "$logdir"
 }
 
-# update-all: the apt upgrade, then the developer tools, then user tools.
+# update-dotfiles: fast-forward the repository that owns ~/.bashrc.d.
+# Usage: update-dotfiles [-v|--verbose]
+update-dotfiles() {
+  local verbose=0
+  case "${1:-}" in -v|--verbose) verbose=1 ;; esac
+
+  if [ "$(id -u)" -eq 0 ]; then
+    printf 'update-dotfiles: run as your user, not root\n' >&2
+    return 1
+  fi
+
+  local dim='' grn='' red='' rst=''
+  if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    dim=$'\033[2m' grn=$'\033[32m' red=$'\033[31m' rst=$'\033[0m'
+  fi
+
+  printf '\n%s==> update-dotfiles%s\n' "$dim" "$rst"
+
+  local link repo before after log rc
+  link=$(readlink -f "$HOME/.bashrc.d" 2>/dev/null) || link=
+  repo=
+  [ -n "$link" ] && repo=$(dirname "$link")
+  if [ -z "$repo" ] || ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '%-32s %sx failed (dotfiles repo not found)%s\n' dotfiles "$red" "$rst"
+    return 1
+  fi
+  if ! git -C "$repo" diff --quiet || ! git -C "$repo" diff --cached --quiet; then
+    printf '%-32s %sx failed (uncommitted changes)%s\n' dotfiles "$red" "$rst"
+    return 1
+  fi
+
+  before=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null) || before=
+  if [ -z "$before" ]; then
+    printf '%-32s %sx failed (not a git checkout)%s\n' dotfiles "$red" "$rst"
+    return 1
+  fi
+
+  log=$(mktemp) || return 1
+  if [ "$verbose" = 1 ]; then
+    git -C "$repo" pull --ff-only 2>&1 | tee "$log"
+    rc=${PIPESTATUS[0]}
+  else
+    git -C "$repo" pull --ff-only >"$log" 2>&1
+    rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then
+    printf '%-32s %sx failed (git pull)%s\n' dotfiles "$red" "$rst"
+    sed 's/^/  /' "$log"
+    rm -f "$log"
+    return 1
+  fi
+  rm -f "$log"
+
+  after=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null) || after=$before
+  if [ "$after" = "$before" ]; then
+    printf '%-32s %s· already latest (%s)%s\n' dotfiles "$dim" "$after" "$rst"
+  else
+    printf '%-32s %s↑ updated %s => %s%s\n' dotfiles "$grn" "$before" "$after" "$rst"
+    printf '%sopen a new shell to load the updated fragments%s\n' "$dim" "$rst"
+  fi
+}
+
+# update-all: dotfiles first, then the apt upgrade, developer tools and user tools.
 # Usage: update-all [-v|--verbose]
 # Every phase runs even if the previous one fails; exit status is non-zero if any did.
 update-all() {
@@ -477,16 +539,18 @@ update-all() {
   case "${1:-}" in -v|--verbose) verbose=1 ;; esac
 
   if [ "$(id -u)" -eq 0 ]; then
-    printf 'update-all: run as your user, not root (both halves write to your home)\n' >&2
+    printf 'update-all: run as your user, not root (it updates your home and apt)\n' >&2
     return 1
   fi
 
   local rc=0
   if [ "$verbose" = 1 ]; then
+    update-dotfiles -v || rc=1
     update-apt-all -v || rc=1
     update-dev-tools -v || rc=1
     update-user-tools -v || rc=1
   else
+    update-dotfiles || rc=1
     update-apt-all || rc=1
     update-dev-tools || rc=1
     update-user-tools || rc=1
