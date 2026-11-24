@@ -1,0 +1,11 @@
+[Unit]
+Description=PIA DNS helper: re-assert PIA tunnel DNS after each connect
+After=default.target
+
+[Service]
+ExecStart=%h/.local/bin/pia-dns-helper.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

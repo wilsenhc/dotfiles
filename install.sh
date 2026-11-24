@@ -448,6 +448,56 @@ if ! _uut_winbox_install_latest; then
   say "warning: WinBox install failed; update-user-tools will retry it"
 fi
 
+# PIA VPN: an official .run installer, also owned by update-user-tools.
+step="PIA VPN"
+if ! _uut_pia_install_latest; then
+  say "warning: PIA install failed; update-user-tools will retry it"
+fi
+
+# PIA + Lerd: PIA's resolver and lerd both want 127.0.0.1:5300, and lerd's
+# watcher overwrites the tunnel interface's DNS after connect. Install the
+# helper that re-asserts PIA's tunnel DNS, and pin the PIA zone in lerd's
+# dnsmasq so its API host is not lost to UDP DNS poisoning.
+step="PIA + Lerd DNS"
+if [ -x /opt/piavpn/bin/piactl ] &&
+   { command -v lerd >/dev/null 2>&1 || [ -d "$HOME/.local/share/lerd" ]; }; then
+  install -D -m 755 "$repo_dir/bin/pia-dns-helper.sh" "$HOME/.local/bin/pia-dns-helper.sh"
+  install -D -m 644 "$repo_dir/systemd/user/pia-dns-helper.service" \
+    "$HOME/.config/systemd/user/pia-dns-helper.service"
+
+  pia_ips=$(curl -fsSL --max-time 8 -H 'accept: application/dns-json' \
+      'https://cloudflare-dns.com/dns-query?name=api.privateinternetaccess.com&type=A' 2>/dev/null |
+    grep -oE '"data":"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | cut -d'"' -f4 |
+    sort -u | paste -sd/ - || true)
+  if [ -n "$pia_ips" ]; then
+    pia_conf="$HOME/.local/share/lerd/dnsmasq/99-pia.conf"
+    pia_pin="address=/privateinternetaccess.com/$pia_ips"
+    if [ "$(cat "$pia_conf" 2>/dev/null)" != "$pia_pin" ]; then
+      mkdir -p "${pia_conf%/*}"
+      printf '%s\n' "$pia_pin" >"$pia_conf"
+      if systemctl --user is-active --quiet lerd-dns; then
+        systemctl --user restart lerd-dns ||
+          say "warning: could not restart lerd-dns; the PIA zone pin applies on its next start"
+      fi
+    fi
+  else
+    say "warning: could not resolve the PIA zone; lerd DNS pin left unchanged"
+  fi
+
+  if [ -n "$(command -v resolvectl)" ] &&
+     sudo -n -l "$(command -v resolvectl)" >/dev/null 2>&1; then
+    if systemctl --user daemon-reload &&
+       systemctl --user enable pia-dns-helper >/dev/null 2>&1 &&
+       systemctl --user restart pia-dns-helper >/dev/null 2>&1; then
+      say "PIA + Lerd DNS helper enabled."
+    else
+      say "warning: could not start pia-dns-helper; run: systemctl --user enable --now pia-dns-helper"
+    fi
+  else
+    say "warning: passwordless resolvectl is unavailable; pia-dns-helper not started"
+  fi
+fi
+
 # global AI/agent skills, installed from the manifest on every run
 step="global skills"
 while IFS= read -r skill_source; do

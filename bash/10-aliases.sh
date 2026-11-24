@@ -390,7 +390,72 @@ _uut_winbox_install_latest() {
   return "$rc"
 }
 
-# update-user-tools: update the user-facing app that lives outside apt.
+# internal: current PIA release for this architecture, as "<version> <url>".
+# PIA has no apt repo: the official installer is a makeself .run, and the
+# release body carries its versioned download URL.
+_uut_pia_release() {
+  local arch json tag url build
+  arch=$(dpkg --print-architecture 2>/dev/null) || arch=amd64
+  case $arch in amd64|arm64) ;; *) return 1 ;; esac
+
+  json=$(curl -fsSL --max-time 20 https://api.github.com/repos/pia-foss/desktop/releases/latest 2>/dev/null) || return 1
+  tag=$(printf '%s' "$json" |
+    sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+  if [ "$arch" = arm64 ]; then
+    url=$(printf '%s' "$json" | grep -oE 'https://[^"\\]*pia-linux-arm64-[0-9][^"\\]*\.run' | head -n1)
+  else
+    url=$(printf '%s' "$json" | grep -oE 'https://[^"\\]*pia-linux-[0-9][^"\\]*\.run' | head -n1)
+  fi
+  [ -n "$tag" ] && [ -n "$url" ] || return 1
+
+  # piactl reports tag+build, e.g. 3.8.0+08539, from pia-linux-3.8-08539.run
+  build=${url##*-}
+  build=${build%.run}
+  printf '%s+%s %s\n' "${tag#v}" "$build" "$url"
+}
+
+# internal: installed PIA version, e.g. 3.7.2+08420
+_uut_pia_version() {
+  local ctl=/opt/piavpn/bin/piactl
+  [ -x "$ctl" ] || ctl=$(command -v piactl 2>/dev/null) || return 1
+  "$ctl" --version 2>/dev/null
+}
+
+# internal: download and run the PIA installer; it upgrades in place.
+# Usage: _uut_pia_install <url>
+_uut_pia_install() {
+  local url=$1 tmp rc
+  tmp=$(mktemp -d) || return 1
+  if ! curl -fsSL --max-time 600 "$url" -o "$tmp/pia.run"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  chmod +x "$tmp/pia.run" || { rm -rf "$tmp"; return 1; }
+  # --nox11 stops makeself from opening an xterm when stdout is a pipe;
+  # --systemd is deterministic on Ubuntu. The installer invokes sudo itself.
+  DEBIAN_FRONTEND=noninteractive "$tmp/pia.run" --nox11 -- --systemd
+  rc=$?
+  rm -rf "$tmp"
+  return "$rc"
+}
+
+# internal: install PIA when it is missing; update-user-tools keeps it current.
+_uut_pia_install_latest() {
+  local release version url current
+  if [ -x /opt/piavpn/bin/pia-client ]; then
+    current=$(_uut_pia_version)
+    printf 'pia already installed%s\n' "${current:+ ($current)}"
+    return 0
+  fi
+
+  release=$(_uut_pia_release) || return 1
+  read -r version url <<<"$release"
+  sudo -v || return 1
+  _uut_pia_install "$url" || return 1
+  printf 'pia installed (%s)\n' "$version"
+}
+
+# update-user-tools: update the user-facing apps that live outside apt.
 # Usage: update-user-tools [-v|--verbose]
 update-user-tools() {
   local verbose=0
@@ -476,6 +541,36 @@ update-user-tools() {
     else
       printf '%-32s %sx failed (download)%s\n' winbox "$red" "$rst"
       failed=1
+    fi
+  fi
+
+  # --- PIA VPN: official .run installer, no apt repo, needs root ---
+  local pia_ctl=/opt/piavpn/bin/piactl
+  if [ ! -x "$pia_ctl" ]; then
+    printf '%-32s %s· skipped (not installed)%s\n' pia "$dim" "$rst"
+  else
+    local pia_current pia_release pia_latest pia_url pia_after
+    pia_current=$(_uut_pia_version)
+    if ! pia_release=$(_uut_pia_release); then
+      printf '%-32s %sx failed (no release found)%s\n' pia "$red" "$rst"
+      failed=1
+    else
+      read -r pia_latest pia_url <<<"$pia_release"
+      if [ -z "$pia_current" ] || [ -z "$pia_latest" ]; then
+        printf '%-32s %sx failed (version)%s\n' pia "$red" "$rst"
+        failed=1
+      elif ! dpkg --compare-versions "$pia_latest" gt "$pia_current"; then
+        printf '%-32s %s· already latest (%s)%s\n' pia "$dim" "$pia_current" "$rst"
+      elif ! sudo -v; then
+        printf '%-32s %sx failed (sudo authentication)%s\n' pia "$red" "$rst"
+        failed=1
+      elif _uut_run pia _uut_pia_install "$pia_url"; then
+        pia_after=$(_uut_pia_version)
+        printf '%-32s %s↑ updated %s => %s%s\n' pia "$grn" "$pia_current" "$pia_after" "$rst"
+      else
+        printf '%-32s %sx failed (exit %s)%s\n' pia "$red" "$?" "$rst"
+        failed=1
+      fi
     fi
   fi
 

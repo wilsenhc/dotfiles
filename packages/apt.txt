@@ -22,3 +22,13 @@ vlc
 gnome-tweaks
 ubuntu-restricted-addons
 ttf-mscorefonts-installer
+
+# PIA VPN: its .run installer checks for these and would apt-get them itself
+libxkbcommon-x11-0
+libnl-3-200
+libnl-route-3-200
+libnl-genl-3-200
+iptables
+psmisc
+libatomic1
+xterm
