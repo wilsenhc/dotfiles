@@ -42,7 +42,7 @@ update-dev-tools -v         # full command output (--verbose works too)
 | `bun` | official installer, only when behind | `bun --version` |
 | `lerd` | `lerd update` | `lerd --version` |
 | `opencode` | `opencode upgrade` | `opencode --version` |
-| `opencode-gui` | download + `sudo -n dpkg -i` the latest .deb, only when behind | `dpkg-query` |
+| `opencode-gui` | download + `sudo -n apt-get install` the latest `.deb`, only when behind | `dpkg-query` |
 | `herdr-core` | `herdr-core update` | `herdr-core --version` |
 | `herdr-cli` | `herdr update` | `herdr --version` |
 | `herdr-app` | official installer, only when behind | `herdr-app --version` |
@@ -52,9 +52,30 @@ update-dev-tools -v         # full command output (--verbose works too)
 
 Notes:
 - `node` and `npm` need `nvm`; `global-skills` needs `bun`.
-- `opencode-gui` and `gitkraken` need passwordless `sudo` for `dpkg` (`sudo -n`); without it the update reports failure instead of prompting.
+- `opencode-gui` and `gitkraken` need passwordless `sudo` for `apt-get`/`dpkg` (`sudo -n`); without it the update reports failure instead of prompting.
 - The opencode desktop app downloads roughly 250 MB, and only when a newer version exists.
 - GitKraken reads the latest version from the download redirect's `Location` header by requesting one byte, so the version check costs no download; the .deb is fetched only when it is actually newer.
+
+### update-dotfiles
+
+Fast-forwards the repository that owns `~/.bashrc.d` to its upstream branch.
+
+```bash
+update-dotfiles             # summary only
+update-dotfiles -v          # stream git's output as well
+```
+
+```
+==> update-dotfiles
+dotfiles                         · already latest (a1db2e2)
+```
+
+- Finds the repository from the `~/.bashrc.d` symlink, so it works wherever the repo was cloned.
+- Refuses to run with modified tracked files; untracked files are left alone.
+- Uses `git pull --ff-only`: it never merges, rebases or stashes. A diverged branch or missing upstream fails and prints git's message.
+- After an update, open a new shell to load the new fragments.
+- Exit status is `0` when the pull succeeds (even if nothing changed), `1` otherwise.
+- Set `NO_COLOR=1` to disable the color output.
 
 ### update-apt-all
 
@@ -102,24 +123,25 @@ winbox                           · already latest (4.5)
 ```
 
 - Refuses to run as root.
-- **WinBox**: distributed by MikroTik as a zip, manually unpacked into `~/Applications/WinBox`; there is no package manager. The current version is read from `mikrotik.com/download/winbox` and remembered in `~/Applications/WinBox.version`. When it differs, the zip is downloaded and its binary compared by SHA-256 with the installed one: identical writes the marker, different replaces `WinBox` and `assets/`. Every run also rewrites the desktop entry, both `~/.local/share/applications/winbox.desktop` and the copy inside the install folder, so the paths always match the current location. User data in `~/.local/share/MikroTik/WinBox` is untouched. MikroTik publishes no checksum for the zip, so that download is HTTPS-only.
+- **WinBox**: distributed by MikroTik as a zip, manually unpacked into `~/Applications/WinBox`; there is no package manager. `install.sh` installs it when missing; this function updates an existing copy. The current version is read from `mikrotik.com/download/winbox` and remembered in `~/Applications/WinBox.version`. When it differs, the zip is downloaded and its binary compared by SHA-256 with the installed one: identical writes the marker, different replaces `WinBox` and `assets/`. Every run also rewrites the desktop entry, both `~/.local/share/applications/winbox.desktop` and the copy inside the install folder, so the paths always match the current location. User data in `~/.local/share/MikroTik/WinBox` is untouched. MikroTik publishes no checksum for the zip, so that download is HTTPS-only.
 - The ArtCraft Launcher and Craft apps are installed from ArtCraft's APT repository by `install.sh`, so `update-apt-all` keeps them current and they no longer need their own updater.
 - Failures mark the row and keep the log directory, which is printed at the end; exit status is `1` if any item failed.
 - Set `NO_COLOR=1` to disable the color output.
 
 ### update-all
 
-Runs the three updaters in order: apt, developer tools, then user tools.
+Runs the four updaters in order: dotfiles, apt, developer tools, then user tools.
 
 ```bash
-update-all                  # all three, quietly
-update-all -v               # all three, with full command output
+update-all                  # all four, quietly
+update-all -v               # all four, with full command output
 ```
 
 - Every phase always runs, even if the previous one fails; the exit status is `1` if any failed.
-- Prints no title of its own — the `==> update-apt-all`, `==> update-dev-tools` and `==> update-user-tools` titles are the steps.
-- `-v` is passed to all three.
+- Each phase prints its own title, so a chained run shows which step is executing.
+- `-v` is passed to all four.
 - Refuses to run as root.
+- If `update-dotfiles` pulls new fragments, the current shell keeps the old functions until a new shell is opened.
 
 ## 30-xone-pair.sh
 

@@ -18,6 +18,9 @@ dotfiles/
 ├── packages/apt-remove.txt  apt packages install.sh purges
 ├── packages/skills.txt  global AI/agent skills install.sh installs
 ├── docs/bashrc.md       what every alias, function and hook does
+├── .shellcheckrc        ShellCheck policy used locally and in CI
+├── .github/workflows/   syntax and ShellCheck CI
+├── LICENSE
 └── README.md
 ```
 
@@ -30,24 +33,26 @@ git clone <repository-url> ~/dotfiles
 
 Any clone location works; the script resolves paths from its own directory.
 
+`install.sh --help` lists the flags; `--dry-run` prints the packages it would purge and exits without changing anything.
+
 `install.sh`:
 
-1. Refuses to run as root or on anything but an Ubuntu/Debian system.
+1. Refuses to run as root or on anything but Ubuntu.
 2. Purges the packages listed in `packages/apt-remove.txt` (LibreOffice by default).
 3. Installs the packages listed in `packages/apt.txt` (the Microsoft-fonts EULA is preseeded so the run stays unattended).
 4. Links `~/.bashrc.d` to `bash/` in the repo, moving aside any existing `~/.bashrc.d`.
 5. Replaces the marker block in `~/.bashrc` with a loop that sources `~/.bashrc.d/*.sh`; everything outside the markers is untouched.
 6. Moves `~/.bash_aliases` to a timestamped backup, since its contents now live in the repo.
-7. On Ubuntu, adds the vendor repositories below and installs their apps.
-8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, GitKraken) and the global skills manifest.
+7. Adds the vendor repositories below and installs their apps.
+8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, GitKraken) and the global skills manifest.
 
-Files it replaces are kept as `<name>.bak-<timestamp>`. Running it again is safe and changes nothing when everything is current. Open a new shell afterwards, or run `source ~/.bashrc`.
+Files it replaces are kept as `<name>.bak-<timestamp>`. Running it again is safe: completed steps are repeated idempotently, and the tool installers may pick up newer upstream releases. Open a new shell afterwards, or run `source ~/.bashrc`.
 
 ## Shell
 
 | Fragment | Contains |
 | --- | --- |
-| `bash/10-aliases.sh` | `art`, `sail`, and the update functions: `update-apt-all`, `update-dev-tools`, `update-user-tools`, and `update-all` |
+| `bash/10-aliases.sh` | `art`, `sail`, and the update functions: `update-dotfiles`, `update-apt-all`, `update-dev-tools`, `update-user-tools`, and `update-all` |
 | `bash/30-xone-pair.sh` | `xone-pair`, the Xbox Wireless Adapter pairing helper |
 | `bash/90-herdr-hook.sh` | herdr live tab-naming hook |
 
@@ -95,17 +100,22 @@ Not everything ships through apt. `install.sh` also installs:
 | lerd | official installer; provides the composer shim |
 | opencode | official installer for the CLI, plus the latest desktop `.deb` |
 | herdr | CLI and desktop-app installers |
+| WinBox | latest MikroTik zip into `~/Applications/WinBox`; `update-user-tools` keeps it current |
 | GitKraken | current official `.deb` (amd64) |
 | Global AI/agent skills | `bunx skills add <source> -g --all` for every entry in `packages/skills.txt` |
 
 ## Unattended install
 
-The longer-term goal is an unattended setup for a clean Ubuntu installation, so a fresh machine gets the packages and shell configuration without interactive steps. This is not implemented yet.
+The longer-term goal is an unattended setup for a clean Ubuntu installation, so a fresh machine gets the packages and shell configuration without interactive steps. The installer itself only needs the sudo password; a full autoinstall/cloud-init file is not implemented yet.
 
 Ubuntu's autoinstall reference, for when it is:
 <https://canonical-subiquity.readthedocs-hosted.com/en/latest/intro-to-autoinstall.html>
 
 ## Notes
 
-- Target platform: Ubuntu. `install.sh` accepts Debian as well, since the package list is apt-based.
+- Target platform: Ubuntu only. `install.sh` refuses other distributions because several packages and all vendor repositories are Ubuntu-specific.
 - Machine-specific settings, secrets and hardware helpers stay out of the repository.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
