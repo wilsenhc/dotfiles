@@ -1,0 +1,11 @@
+# Global AI/agent skills installed by install.sh with:
+#   bunx skills add <source> -g --all
+wilsenhc/skills
+addyosmani/web-quality-skills
+alinaqi/maggy
+DietrichGebert/ponytail
+herdrdev/herdr
+laravel/agent-skills
+mattpocock/skills
+pbakaus/impeccable
+vercel-labs/skills
