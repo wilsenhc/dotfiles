@@ -15,6 +15,7 @@ dotfiles/
 ├── install.sh           applies this repository to the current machine
 ├── bash/                shell fragments, linked to ~/.bashrc.d
 ├── packages/apt.txt     apt packages install.sh installs
+├── packages/apt-remove.txt  apt packages install.sh purges
 ├── packages/skills.txt  global AI/agent skills install.sh installs
 ├── docs/bashrc.md       what every alias, function and hook does
 └── README.md
@@ -32,12 +33,13 @@ Any clone location works; the script resolves paths from its own directory.
 `install.sh`:
 
 1. Refuses to run as root or on anything but an Ubuntu/Debian system.
-2. Installs the packages listed in `packages/apt.txt` (the Microsoft-fonts EULA is preseeded so the run stays unattended).
-3. Links `~/.bashrc.d` to `bash/` in the repo, moving aside any existing `~/.bashrc.d`.
-4. Replaces the marker block in `~/.bashrc` with a loop that sources `~/.bashrc.d/*.sh`; everything outside the markers is untouched.
-5. Moves `~/.bash_aliases` to a timestamped backup, since its contents now live in the repo.
-6. On Ubuntu, adds the vendor repositories below and installs their apps.
-7. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, GitKraken) and the global skills manifest.
+2. Purges the packages listed in `packages/apt-remove.txt` (LibreOffice by default).
+3. Installs the packages listed in `packages/apt.txt` (the Microsoft-fonts EULA is preseeded so the run stays unattended).
+4. Links `~/.bashrc.d` to `bash/` in the repo, moving aside any existing `~/.bashrc.d`.
+5. Replaces the marker block in `~/.bashrc` with a loop that sources `~/.bashrc.d/*.sh`; everything outside the markers is untouched.
+6. Moves `~/.bash_aliases` to a timestamped backup, since its contents now live in the repo.
+7. On Ubuntu, adds the vendor repositories below and installs their apps.
+8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, GitKraken) and the global skills manifest.
 
 Files it replaces are kept as `<name>.bak-<timestamp>`. Running it again is safe and changes nothing when everything is current. Open a new shell afterwards, or run `source ~/.bashrc`.
 
@@ -54,6 +56,10 @@ See [docs/bashrc.md](docs/bashrc.md) for what each one does and the tools it dep
 ## Packages
 
 `packages/apt.txt` is the apt package list, one per line; comments and blank lines are ignored. It holds the dev tools and user apps installed from the Ubuntu repositories.
+
+## Removals
+
+`packages/apt-remove.txt` lists packages `install.sh` purges before installing anything. Entries are shell-style globs expanded against installed packages, so `libreoffice*` removes every installed LibreOffice component. Shared dependencies are left alone; when nothing matches, the step is skipped.
 
 ## Third-party apps
 

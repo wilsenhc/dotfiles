@@ -17,6 +17,22 @@ case "${ID:-} ${ID_LIKE:-}" in
   *) die "unsupported OS: ${PRETTY_NAME:-unknown} (Ubuntu/Debian only)" ;;
 esac
 
+# --- removals --------------------------------------------------------------
+mapfile -t remove_patterns < <(grep -vE '^[[:space:]]*(#|$)' "$repo_dir/packages/apt-remove.txt")
+remove_pkgs=()
+for pattern in "${remove_patterns[@]}"; do
+  while read -r status pkg; do
+    if [ "$status" = installed ] && [ -n "$pkg" ]; then remove_pkgs+=("$pkg"); fi
+  done < <(dpkg-query -W -f='${db:Status-Status} ${binary:Package}\n' "$pattern" 2>/dev/null)
+done
+if [ "${#remove_pkgs[@]}" -gt 0 ]; then
+  mapfile -t remove_pkgs < <(printf '%s\n' "${remove_pkgs[@]}" | sort -u)
+  say "Removing ${#remove_pkgs[@]} packages from packages/apt-remove.txt..."
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get purge -y "${remove_pkgs[@]}"
+else
+  say "No packages to remove."
+fi
+
 # --- packages --------------------------------------------------------------
 mapfile -t packages < <(grep -vE '^[[:space:]]*(#|$)' "$repo_dir/packages/apt.txt")
 if [ "${#packages[@]}" -gt 0 ]; then

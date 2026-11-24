@@ -1,0 +1,3 @@
+# Packages install.sh purges before installing anything.
+# Shell-style globs are expanded against the installed packages.
+libreoffice*
