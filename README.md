@@ -14,10 +14,13 @@ My dotfiles, shell scripts and configuration files, kept in one repository so th
 dotfiles/
 ├── install.sh           applies this repository to the current machine
 ├── bash/                shell fragments, linked to ~/.bashrc.d
+├── bin/                 helper scripts installed into ~/.local/bin
 ├── packages/apt.txt     apt packages install.sh installs
 ├── packages/apt-remove.txt  apt packages install.sh purges
 ├── packages/skills.txt  global AI/agent skills install.sh installs
+├── systemd/user/        user units installed into ~/.config/systemd/user
 ├── docs/bashrc.md       what every alias, function and hook does
+├── docs/pia-lerd.md     the PIA VPN + lerd DNS compatibility setup
 ├── .shellcheckrc        ShellCheck policy used locally and in CI
 ├── .github/workflows/   syntax and ShellCheck CI
 ├── LICENSE
@@ -44,7 +47,7 @@ Any clone location works; the script resolves paths from its own directory.
 5. Replaces the marker block in `~/.bashrc` with a loop that sources `~/.bashrc.d/*.sh`; everything outside the markers is untouched.
 6. Moves `~/.bash_aliases` to a timestamped backup, since its contents now live in the repo.
 7. Adds the vendor repositories below and installs their apps.
-8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, GitKraken), the global skills manifest, and Impeccable's OpenCode skill and `/impeccable` command.
+8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, PIA VPN, GitKraken), the global skills manifest, and Impeccable's OpenCode skill and `/impeccable` command.
 
 Files it replaces are kept as `<name>.bak-<timestamp>`. Running it again is safe: completed steps are repeated idempotently, and the tool installers may pick up newer upstream releases. Open a new shell afterwards, or run `source ~/.bashrc`.
 
@@ -87,7 +90,7 @@ On Ubuntu, `install.sh` also registers these vendor repositories and installs th
 
 Docker follows Docker's Ubuntu instructions: its keyring and `.sources` file, the five engine packages, and the post-install step that adds you to the `docker` group. Group membership only applies to a new session, so log out and back in (or run `newgrp docker`) before using `docker` without `sudo`.
 
-Because ArtCraft now comes from an apt repository, `update-apt-all` keeps its launcher and apps current; `update-user-tools` is reduced to WinBox.
+Because ArtCraft now comes from an apt repository, `update-apt-all` keeps its launcher and apps current; `update-user-tools` is reduced to WinBox and PIA VPN.
 
 ## Developer and user tools
 
@@ -101,11 +104,14 @@ Not everything ships through apt. `install.sh` also installs:
 | opencode | official installer for the CLI, plus the latest desktop `.deb` |
 | herdr | CLI and desktop-app installers |
 | WinBox | latest MikroTik zip into `~/Applications/WinBox`; `update-user-tools` keeps it current |
+| PIA VPN | official Linux `.run` from the `pia-foss/desktop` release into `/opt/piavpn`; `update-user-tools` keeps it current |
 | GitKraken | current official `.deb` (amd64) |
 | Impeccable | `bunx impeccable install --providers=opencode -y --global`, then `bunx impeccable update -y --global` |
 | Global AI/agent skills | `bunx skills add <source> -g --all` for every entry in `packages/skills.txt` |
 
 Impeccable has its own installer because it registers the `/impeccable` command as well as the skill, so it is not in `packages/skills.txt`.
+
+PIA VPN publishes no apt repository. `install.sh` runs the official `.run` installer, which sets up the `/opt/piavpn` install and its systemd service; `update-user-tools` downloads and reruns a newer one over the existing install, keeping settings and account data. On machines with lerd, `install.sh` also installs the PIA DNS helper and pins the PIA API zone in lerd's dnsmasq; see [docs/pia-lerd.md](docs/pia-lerd.md).
 
 ## Unattended install
 

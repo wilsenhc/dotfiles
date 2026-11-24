@@ -112,7 +112,7 @@ linux-generic                    · kept back (6.8.0-31.31)
 
 ### update-user-tools
 
-Updates the user-facing app that still lives outside apt: WinBox.
+Updates the user-facing apps that still live outside apt: WinBox and PIA VPN.
 
 ```bash
 update-user-tools          # summary only; command output is hidden
@@ -122,10 +122,12 @@ update-user-tools -v       # stream downloads and installs
 ```
 ==> update-user-tools
 winbox                           · already latest (4.5)
+pia                              · already latest (3.8.0+08539)
 ```
 
 - Refuses to run as root.
 - **WinBox**: distributed by MikroTik as a zip, manually unpacked into `~/Applications/WinBox`; there is no package manager. `install.sh` installs it when missing; this function updates an existing copy. The current version is read from `mikrotik.com/download/winbox` and remembered in `~/Applications/WinBox.version`. When it differs, the zip is downloaded and its binary compared by SHA-256 with the installed one: identical writes the marker, different replaces `WinBox` and `assets/`. Every run also rewrites the desktop entry, both `~/.local/share/applications/winbox.desktop` and the copy inside the install folder, so the paths always match the current location. User data in `~/.local/share/MikroTik/WinBox` is untouched. MikroTik publishes no checksum for the zip, so that download is HTTPS-only.
+- **PIA VPN**: distributed as an official makeself `.run` installer, installed under `/opt/piavpn` with a systemd service. The installed version comes from `piactl --version`; the release tag and `.run` URL come from the `pia-foss/desktop` GitHub release, and the build number in the file name makes the full version (`3.8.0+08539`). Only when it is newer is the roughly 78 MB installer downloaded and rerun; it upgrades in place and keeps settings. Because it writes to `/opt` and systemd, the update authenticates sudo up front; `update-all` usually still has the timestamp from `update-apt-all`. The PIA + lerd DNS helper and zone pin are installed separately by `install.sh`; see [pia-lerd.md](pia-lerd.md).
 - The ArtCraft Launcher and Craft apps are installed from ArtCraft's APT repository by `install.sh`, so `update-apt-all` keeps them current and they no longer need their own updater.
 - Failures mark the row and keep the log directory, which is printed at the end; exit status is `1` if any item failed.
 - Set `NO_COLOR=1` to disable the color output.
