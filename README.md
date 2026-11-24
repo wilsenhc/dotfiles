@@ -44,7 +44,7 @@ Any clone location works; the script resolves paths from its own directory.
 5. Replaces the marker block in `~/.bashrc` with a loop that sources `~/.bashrc.d/*.sh`; everything outside the markers is untouched.
 6. Moves `~/.bash_aliases` to a timestamped backup, since its contents now live in the repo.
 7. Adds the vendor repositories below and installs their apps.
-8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, GitKraken) and the global skills manifest.
+8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, GitKraken), the global skills manifest, and Impeccable's OpenCode skill and `/impeccable` command.
 
 Files it replaces are kept as `<name>.bak-<timestamp>`. Running it again is safe: completed steps are repeated idempotently, and the tool installers may pick up newer upstream releases. Open a new shell afterwards, or run `source ~/.bashrc`.
 
@@ -102,7 +102,10 @@ Not everything ships through apt. `install.sh` also installs:
 | herdr | CLI and desktop-app installers |
 | WinBox | latest MikroTik zip into `~/Applications/WinBox`; `update-user-tools` keeps it current |
 | GitKraken | current official `.deb` (amd64) |
+| Impeccable | `bunx impeccable install --providers=opencode -y --global`, then `bunx impeccable update -y --global` |
 | Global AI/agent skills | `bunx skills add <source> -g --all` for every entry in `packages/skills.txt` |
+
+Impeccable has its own installer because it registers the `/impeccable` command as well as the skill, so it is not in `packages/skills.txt`.
 
 ## Unattended install
 

@@ -46,12 +46,14 @@ update-dev-tools -v         # full command output (--verbose works too)
 | `herdr-core` | `herdr-core update` | `herdr-core --version` |
 | `herdr-cli` | `herdr update` | `herdr --version` |
 | `herdr-app` | official installer, only when behind | `herdr-app --version` |
-| `herdr-plugins` | `herdr plugin update --yes` (runs last) | `herdr plugin list --json` |
+| `herdr-plugins` | `herdr plugin update --yes` (after the herdr CLI) | `herdr plugin list --json` |
+| `impeccable` | `timeout 600 bunx impeccable@latest update -y --global`, only when behind | `version:` in the installed `SKILL.md` |
 | `global-skills` | `bunx skills update -g -y` | hash of `~/.agents/.skill-lock.json` |
 | `gitkraken` | download + `sudo -n dpkg -i` the latest .deb, only when newer | `dpkg-query` |
 
 Notes:
-- `node` and `npm` need `nvm`; `global-skills` needs `bun`.
+- `node` and `npm` need `nvm`; `impeccable` and `global-skills` need `bunx`. The latest Impeccable version comes from `bun info impeccable version`.
+- `impeccable` updates the official OpenCode install, including the `/impeccable` command; it is not part of the `global-skills` set.
 - `opencode-gui` and `gitkraken` need passwordless `sudo` for `apt-get`/`dpkg` (`sudo -n`); without it the update reports failure instead of prompting.
 - The opencode desktop app downloads roughly 250 MB, and only when a newer version exists.
 - GitKraken reads the latest version from the download redirect's `Location` header by requesting one byte, so the version check costs no download; the .deb is fetched only when it is actually newer.
