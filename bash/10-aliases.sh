@@ -298,35 +298,6 @@ update-apt-all() {
   rm -rf "$logdir"
 }
 
-# internal: latest release tag of a GitHub repo, resolved from the
-# /releases/latest redirect so no API token or rate limit is involved.
-# Usage: _uut_github_tag <owner/repo>
-_uut_github_tag() {
-  local url
-  url=$(curl -sIL --max-time 20 -o /dev/null -w '%{url_effective}' \
-    "https://github.com/$1/releases/latest" 2>/dev/null) || return 1
-  case $url in
-    */releases/tag/*) printf '%s\n' "${url##*/tag/}" ;;
-    *) return 1 ;;
-  esac
-}
-
-# internal: download, verify against the release's SHA256SUMS and install a
-# Craft app .deb. Usage: _uut_install_deb <owner/repo> <tag> <package> <version> <arch> <dir>
-_uut_install_deb() {
-  local repo=$1 tag=$2 pkg=$3 version=$4 arch=$5 dir=$6
-  local asset="$pkg-$version-linux-$arch.deb"
-  local base="https://github.com/$repo/releases/download/$tag"
-
-  curl -fsSL --max-time 600 "$base/$asset" -o "$dir/$asset" || return 1
-  curl -fsSL --max-time 60 "$base/SHA256SUMS.txt" -o "$dir/SHA256SUMS.txt" || return 1
-  (
-    cd "$dir" || return 1
-    awk -v a="$asset" '$2 == a' SHA256SUMS.txt | sha256sum -c --quiet -
-  ) || return 1
-  sudo apt-get install -y "$dir/$asset" || return 1
-}
-
 # internal: versioned path of the current WinBox Linux zip on MikroTik's page
 _uut_winbox_zip() {
   curl -fsSL --max-time 20 https://mikrotik.com/download/winbox 2>/dev/null |
@@ -364,8 +335,8 @@ _uut_winbox_install() {
   printf '%s\n' "$version" > "$marker" || return 1
 }
 
-# update-user-tools: update WinBox, the ArtCraft Launcher and the installed
-# Craft apps. Usage: update-user-tools [-v|--verbose]
+# update-user-tools: update the user-facing app that lives outside apt.
+# Usage: update-user-tools [-v|--verbose]
 update-user-tools() {
   local verbose=0
   case "${1:-}" in -v|--verbose) verbose=1 ;; esac
@@ -449,72 +420,6 @@ update-user-tools() {
       fi
     else
       printf '%-18s %sx failed (download)%s\n' winbox "$red" "$rst"
-      failed=1
-    fi
-  fi
-
-  # --- ArtCraft Launcher and Craft apps: dpkg .debs from GitHub releases ---
-  local arch
-  case $(dpkg --print-architecture 2>/dev/null) in
-    amd64) arch=x86_64 ;;
-    arm64) arch=aarch64 ;;
-    *) arch='' ;;
-  esac
-
-  local -a jobs=()
-  if [ -z "$arch" ]; then
-    printf '%-18s %s· skipped (unsupported arch)%s\n' artcraft "$dim" "$rst"
-  else
-    local inst tag version
-    if dpkg-query -W artcraft-launcher >/dev/null 2>&1; then
-      inst=$(dpkg-query -W -f='${Version}' artcraft-launcher)
-      if tag=$(_uut_github_tag storytold/craft-launcher); then
-        version=${tag#v}
-        if dpkg --compare-versions "$version" gt "$inst"; then
-          jobs+=("artcraft-launcher|storytold/craft-launcher|$tag|artcraft-launcher|$version|$inst")
-        else
-          printf '%-18s %s· already latest (%s)%s\n' artcraft-launcher "$dim" "$inst" "$rst"
-        fi
-      else
-        printf '%-18s %sx failed (no release found)%s\n' artcraft-launcher "$red" "$rst"
-        failed=1
-      fi
-    else
-      printf '%-18s %s· skipped (not installed)%s\n' artcraft-launcher "$dim" "$rst"
-    fi
-
-    local pkg
-    while read -r pkg; do
-      [ -n "$pkg" ] || continue
-      inst=$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)
-      if tag=$(_uut_github_tag "storytold/$pkg"); then
-        version=${tag#v}
-        if dpkg --compare-versions "$version" gt "$inst"; then
-          jobs+=("$pkg|storytold/$pkg|$tag|$pkg|$version|$inst")
-        else
-          printf '%-18s %s· already latest (%s)%s\n' "$pkg" "$dim" "$inst" "$rst"
-        fi
-      else
-        printf '%-18s %s· skipped (no release found)%s\n' "$pkg" "$dim" "$rst"
-      fi
-    done < <(dpkg-query -W -f='${db:Status-Status} ${Package} ${Homepage}\n' 2>/dev/null |
-             awk '$1 == "installed" && $3 ~ /getartcraft\.com\/apps\// { print $2 }' | sort)
-  fi
-
-  if [ "${#jobs[@]}" -gt 0 ]; then
-    if sudo -v; then
-      local job label repo tag pkg version inst
-      for job in "${jobs[@]}"; do
-        IFS='|' read -r label repo tag pkg version inst <<< "$job"
-        if _uut_run "$label" _uut_install_deb "$repo" "$tag" "$pkg" "$version" "$arch" "$logdir"; then
-          printf '%-18s %s↑ updated %s => %s%s\n' "$label" "$grn" "$inst" "$version" "$rst"
-        else
-          printf '%-18s %sx failed (exit %s)%s\n' "$label" "$red" "$?" "$rst"
-          failed=1
-        fi
-      done
-    else
-      printf '%-18s %sx authentication failed%s\n' sudo "$red" "$rst"
       failed=1
     fi
   fi

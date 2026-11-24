@@ -89,7 +89,7 @@ linux-generic      · kept back (6.8.0-31.31)
 
 ### update-user-tools
 
-Updates the user-facing apps that live outside apt: WinBox, the ArtCraft Launcher, and the Craft apps the launcher installed.
+Updates the user-facing app that still lives outside apt: WinBox.
 
 ```bash
 update-user-tools          # summary only; command output is hidden
@@ -98,18 +98,12 @@ update-user-tools -v       # stream downloads and installs
 
 ```
 ==> update-user-tools
-winbox              ↑ updated => 4.5
-artcraft-launcher   · already latest (0.19.2-1)
-photocraft          · already latest (0.23.1-1)
-pdfcraft            ↑ updated 0.21.1-1 => 0.22.0
+winbox             · already latest (4.5)
 ```
 
 - Refuses to run as root.
 - **WinBox**: distributed by MikroTik as a zip, manually unpacked into `~/Applications/WinBox`; there is no package manager. The current version is read from `mikrotik.com/download/winbox` and remembered in `~/Applications/WinBox.version`. When it differs, the zip is downloaded and its binary compared by SHA-256 with the installed one: identical writes the marker, different replaces `WinBox` and `assets/`. Every run also rewrites the desktop entry, both `~/.local/share/applications/winbox.desktop` and the copy inside the install folder, so the paths always match the current location. User data in `~/.local/share/MikroTik/WinBox` is untouched. MikroTik publishes no checksum for the zip, so that download is HTTPS-only.
-- **ArtCraft Launcher and apps**: installed as `.deb` packages with no apt repo, so `apt dist-upgrade` never touches them. The latest tag is read from each GitHub repo's `/releases/latest` redirect (no API rate limit), compared with the installed version via `dpkg --compare-versions`. Pending updates are downloaded as `<pkg>-<ver>-linux-<arch>.deb`, checked against the release's `SHA256SUMS.txt`, and installed with `apt-get`.
-- Craft apps are discovered through their dpkg `Homepage` (`getartcraft.com/apps/*`), so apps installed later are picked up automatically. A package whose repo cannot be resolved is reported as skipped.
-- `sudo` is requested once, and only when an ArtCraft update is actually pending, before the first install row.
-- An unsupported CPU architecture (anything but amd64/arm64) skips the ArtCraft half.
+- The ArtCraft Launcher and Craft apps are installed from ArtCraft's APT repository by `install.sh`, so `update-apt-all` keeps them current and they no longer need their own updater.
 - Failures mark the row and keep the log directory, which is printed at the end; exit status is `1` if any item failed.
 - Set `NO_COLOR=1` to disable the color output.
 
