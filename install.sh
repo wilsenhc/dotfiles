@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Apply this repository to the current machine. Safe to re-run.
-set -euo pipefail
+set -Eeuo pipefail
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 stamp=$(date +%Y%m%d-%H%M%S)
@@ -8,25 +8,59 @@ stamp=$(date +%Y%m%d-%H%M%S)
 say() { printf '%s\n' "$*"; }
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 
+usage() {
+  cat <<'EOF'
+Usage: install.sh [--dry-run]
+
+Applies this dotfiles repository to the current Ubuntu machine. Safe to re-run.
+
+  -n, --dry-run  show the packages that would be purged, then exit
+  -h, --help     show this help
+EOF
+}
+
+dry_run=0
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  -n|--dry-run) dry_run=1 ;;
+  "") ;;
+  *) die "unknown argument: $1 (try --help)" ;;
+esac
+[ "$#" -le 1 ] || die "too many arguments (try --help)"
+
+step=preflight
+trap 'printf "\ninstall.sh: %s failed (line %s). Completed steps are safe to re-run.\n" "$step" "$LINENO" >&2' ERR
+
 # --- guards ----------------------------------------------------------------
 [ "$(id -u)" -ne 0 ] || die "run as your user, not root (apt asks for sudo when needed)"
 # shellcheck disable=SC1091
 . /etc/os-release
-case "${ID:-} ${ID_LIKE:-}" in
-  *ubuntu*|*debian*) ;;
-  *) die "unsupported OS: ${PRETTY_NAME:-unknown} (Ubuntu/Debian only)" ;;
-esac
+[ "${ID:-}" = ubuntu ] || die "unsupported OS: ${PRETTY_NAME:-unknown} (Ubuntu only)"
 
 # --- removals --------------------------------------------------------------
-mapfile -t remove_patterns < <(grep -vE '^[[:space:]]*(#|$)' "$repo_dir/packages/apt-remove.txt")
+step=removals
+mapfile -t remove_patterns < <(grep -vE '^[[:space:]]*(#|$)' "$repo_dir/packages/apt-remove.txt" || true)
 remove_pkgs=()
 for pattern in "${remove_patterns[@]}"; do
   while read -r status pkg; do
     if [ "$status" = installed ] && [ -n "$pkg" ]; then remove_pkgs+=("$pkg"); fi
-  done < <(dpkg-query -W -f='${db:Status-Status} ${binary:Package}\n' "$pattern" 2>/dev/null)
+  done < <(dpkg-query -W -f='${db:Status-Status} ${binary:Package}\n' "$pattern" 2>/dev/null || true)
 done
 if [ "${#remove_pkgs[@]}" -gt 0 ]; then
   mapfile -t remove_pkgs < <(printf '%s\n' "${remove_pkgs[@]}" | sort -u)
+fi
+
+if [ "$dry_run" = 1 ]; then
+  if [ "${#remove_pkgs[@]}" -gt 0 ]; then
+    say "Would remove ${#remove_pkgs[@]} package(s): ${remove_pkgs[*]}"
+  else
+    say "No packages to remove."
+  fi
+  say "Dry run: no changes made."
+  exit 0
+fi
+
+if [ "${#remove_pkgs[@]}" -gt 0 ]; then
   say "Removing ${#remove_pkgs[@]} packages from packages/apt-remove.txt..."
   sudo env DEBIAN_FRONTEND=noninteractive apt-get purge -y "${remove_pkgs[@]}"
 else
@@ -34,7 +68,8 @@ else
 fi
 
 # --- packages --------------------------------------------------------------
-mapfile -t packages < <(grep -vE '^[[:space:]]*(#|$)' "$repo_dir/packages/apt.txt")
+step="apt packages"
+mapfile -t packages < <(grep -vE '^[[:space:]]*(#|$)' "$repo_dir/packages/apt.txt" || true)
 if [ "${#packages[@]}" -gt 0 ]; then
   say "Installing ${#packages[@]} packages from packages/apt.txt..."
   # ttf-mscorefonts-installer stops on the EULA prompt otherwise
@@ -47,6 +82,7 @@ else
 fi
 
 # --- shell fragments -------------------------------------------------------
+step="shell fragments"
 bashrc_d="$HOME/.bashrc.d"
 fragments=$(readlink -f "$repo_dir/bash")
 if [ -L "$bashrc_d" ] && [ "$(readlink -f "$bashrc_d")" = "$fragments" ]; then
@@ -61,6 +97,7 @@ else
 fi
 
 # --- ~/.bashrc marker block ------------------------------------------------
+step="~/.bashrc marker block"
 bashrc="$HOME/.bashrc"
 [ -e "$bashrc" ] || : > "$bashrc"
 block_start='### START: User Specific Aliases and Functions ###'
@@ -116,6 +153,7 @@ fi
 rm -f "$tmp"
 
 # --- retired ~/.bash_aliases -----------------------------------------------
+step="~/.bash_aliases"
 aliases="$HOME/.bash_aliases"
 if [ -e "$aliases" ] || [ -L "$aliases" ]; then
   mv "$aliases" "$aliases.bak-$stamp"
@@ -125,9 +163,10 @@ fi
 # --- third-party repositories and apps -------------------------------------
 # Repo-backed apps from the external list. Bitwarden stays out; GitKraken and
 # opencode are installed in the non-apt step below.
+step="third-party repositories"
 if [ "${ID:-}" = ubuntu ]; then
-  ubuntu_codename=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
-  ubuntu_major=$(. /etc/os-release && echo "${VERSION_ID%%.*}")
+  ubuntu_codename=${UBUNTU_CODENAME:-$VERSION_CODENAME}
+  ubuntu_major=${VERSION_ID%%.*}
   arch=$(dpkg --print-architecture)
   third_party=()
 
@@ -359,6 +398,7 @@ else
 fi
 
 # --- developer and user tools (non-apt) ------------------------------------
+step="developer and user tools"
 say "Installing developer and user tools..."
 
 # nvm: resolve the latest release first, since the install script URL is versioned.
@@ -399,7 +439,17 @@ rm -rf "$tmpdir"
 curl -fsSL https://herdr.dev/install.sh | sh
 curl -fsSL https://releases.herdr.dev/app/install.sh | sh
 
+# WinBox: a zip from MikroTik, no package manager. The fragment owns the
+# download helpers so this install and update-user-tools share one code path.
+step=WinBox
+# shellcheck source=bash/10-aliases.sh
+. "$repo_dir/bash/10-aliases.sh"
+if ! _uut_winbox_install_latest; then
+  say "warning: WinBox install failed; update-user-tools will retry it"
+fi
+
 # global AI/agent skills, installed from the manifest on every run
+step="global skills"
 while IFS= read -r skill_source; do
   case $skill_source in ''|'#'*) continue ;; esac
   bunx skills add "$skill_source" -g --all
@@ -409,6 +459,4 @@ say "Developer and user tools installed."
 
 say ""
 say "Done. Open a new shell or run: source ~/.bashrc"
-if [ "${ID:-}" = ubuntu ]; then
-  say "Docker: log out and back in (or run: newgrp docker) to use docker without sudo."
-fi
+say "Docker: log out and back in (or run: newgrp docker) to use docker without sudo."

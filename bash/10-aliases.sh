@@ -58,6 +58,8 @@ update-dev-tools() {
 
   local logdir
   logdir=$(mktemp -d "${TMPDIR:-/tmp}/update-dev-tools.XXXXXX") || return 1
+  local arch
+  arch=$(dpkg --print-architecture 2>/dev/null) || arch=amd64
   local tool label cmd before after rc failed=0 skip latest
   for tool in node npm bun lerd opencode opencode-gui herdr-core herdr herdr-app herdr-plugins global-skills gitkraken; do
     label=$tool
@@ -104,7 +106,7 @@ update-dev-tools() {
           sed -n 's/^version:[[:space:]]*//p' | head -n1)
         # unknown latest, not installed, or already current: leave it alone
         if [ -z "$latest" ] || [ -z "$before" ] || [ "$latest" = "$before" ]; then skip=1; fi
-        cmd=(bash -o pipefail -c "curl -fsSL https://opencode.ai/files/bin/$latest/opencode-desktop-linux-amd64.deb -o /tmp/opencode-desktop.deb && sudo -n dpkg -i /tmp/opencode-desktop.deb && rm -f /tmp/opencode-desktop.deb")
+        cmd=(bash -o pipefail -c "curl -fsSL https://opencode.ai/files/bin/$latest/opencode-desktop-linux-$arch.deb -o /tmp/opencode-desktop.deb && sudo -n apt-get install -y /tmp/opencode-desktop.deb && rm -f /tmp/opencode-desktop.deb")
         ;;
       # last, so plugins update against the herdr CLI installed just above
       herdr-plugins) cmd=(herdr plugin update --yes) ;;
@@ -333,6 +335,42 @@ _uut_winbox_install() {
   cp -a "$src/assets" "$dir/assets" || return 1
   _uut_winbox_desktop "$dir" || return 1
   printf '%s\n' "$version" > "$marker" || return 1
+}
+
+# internal: install WinBox when it is missing; update-user-tools keeps an
+# existing copy current. Called by install.sh after the apt packages exist.
+_uut_winbox_install_latest() {
+  local dir="$HOME/Applications/WinBox"
+  local marker="$HOME/Applications/WinBox.version"
+  local zip version tmp rc
+
+  if [ -x "$dir/WinBox" ]; then
+    version=$(cat "$marker" 2>/dev/null)
+    printf 'winbox already installed%s\n' "${version:+ ($version)}"
+    return 0
+  fi
+
+  zip=$(_uut_winbox_zip)
+  [ -n "$zip" ] || return 1
+  version=${zip#routeros/winbox/}
+  version=${version%%/*}
+
+  tmp=$(mktemp -d) || return 1
+  if ! curl -fsSL --max-time 600 "https://download.mikrotik.com/$zip" -o "$tmp/winbox.zip" ||
+     ! unzip -oq "$tmp/winbox.zip" -d "$tmp/winbox"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+
+  mkdir -p "$dir" || { rm -rf "$tmp"; return 1; }
+  if _uut_winbox_install "$tmp/winbox" "$dir" "$version" "$marker"; then
+    printf 'winbox installed (%s)\n' "$version"
+    rc=0
+  else
+    rc=1
+  fi
+  rm -rf "$tmp"
+  return "$rc"
 }
 
 # update-user-tools: update the user-facing app that lives outside apt.
