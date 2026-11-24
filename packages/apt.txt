@@ -1,9 +1,24 @@
 # Packages installed by install.sh. One per line; comments and blank lines ignored.
+
+# dev tools
 git
 curl
 wget
+gpg
 build-essential
 unzip
 jq
 ripgrep
 tree
+btop
+fastfetch
+lazygit
+ffmpeg
+fonts-firacode
+linux-tools-generic
+
+# user apps
+vlc
+gnome-tweaks
+ubuntu-restricted-addons
+ttf-mscorefonts-installer
