@@ -67,12 +67,12 @@ update-apt-all -v           # stream apt's output as well
 
 ```
 ==> update-apt-all
-apt update         ✓ done
-apt upgrade        ✓ done
-base-files         ↑ updated 13.3 => 13.4
-linux-headers      + added (6.8.0-40.40)
-old-lib            - removed (1.0)
-linux-generic      · kept back (6.8.0-31.31)
+apt update                       ✓ done
+apt upgrade                      ✓ done
+base-files                       ↑ updated 13.3 => 13.4
+linux-headers                    + added (6.8.0-40.40)
+old-lib                          - removed (1.0)
+linux-generic                    · kept back (6.8.0-31.31)
 ```
 
 - Refuses to run as root; sudo is used only for the apt commands.
@@ -98,7 +98,7 @@ update-user-tools -v       # stream downloads and installs
 
 ```
 ==> update-user-tools
-winbox             · already latest (4.5)
+winbox                           · already latest (4.5)
 ```
 
 - Refuses to run as root.

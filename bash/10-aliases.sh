@@ -66,7 +66,7 @@ update-dev-tools() {
       if [ "$verbose" = 1 ]; then
         printf '\n%s==> %s%s\n' "$dim" "$label" "$rst"
       fi
-      printf '%-18s %s· skipped (not installed)%s\n' "$label" "$dim" "$rst"
+      printf '%-32s %s· skipped (not installed)%s\n' "$label" "$dim" "$rst"
       continue
     fi
 
@@ -134,7 +134,7 @@ update-dev-tools() {
       "${cmd[@]}" </dev/null 2>&1 | tee "$logdir/$tool.log"
       rc=${PIPESTATUS[0]}
     else
-      printf '%s%-18s ...%s' "$dim" "$label" "$rst"
+      printf '%s%-32s ...%s' "$dim" "$label" "$rst"
       # stdin closed so a tool that asks a question fails instead of waiting
       # forever on a prompt hidden in the log (lerd update asks on a tty)
       "${cmd[@]}" </dev/null >"$logdir/$tool.log" 2>&1
@@ -144,14 +144,14 @@ update-dev-tools() {
     after=$(_udt_ver "$tool")
 
     if [ "$rc" -ne 0 ]; then
-      printf '%-18s %sx failed (exit %s)%s\n' "$label" "$red" "$rc" "$rst"
+      printf '%-32s %sx failed (exit %s)%s\n' "$label" "$red" "$rc" "$rst"
       failed=1
     elif [ -n "$before" ] && [ "$after" != "$before" ]; then
-      printf '%-18s %s↑ updated %s => %s%s\n' "$label" "$grn" "$before" "$after" "$rst"
+      printf '%-32s %s↑ updated %s => %s%s\n' "$label" "$grn" "$before" "$after" "$rst"
     elif [ -n "$after" ]; then
-      printf '%-18s %s· already latest (%s)%s\n' "$label" "$dim" "$after" "$rst"
+      printf '%-32s %s· already latest (%s)%s\n' "$label" "$dim" "$after" "$rst"
     else
-      printf '%-18s %s✓ done%s\n' "$label" "$grn" "$rst"
+      printf '%-32s %s✓ done%s\n' "$label" "$grn" "$rst"
     fi
   done
 
@@ -192,10 +192,10 @@ _update_apt_rows() {
   ' "$1" "$2" "$3" | sort -t $'\t' -k1,1n -k2,2 |
     while IFS=$'\t' read -r group pkg v1 v2; do
       case $group in
-        1) printf '%-18s %s↑ updated %s => %s%s\n' "$pkg" "$grn" "$v1" "$v2" "$rst" ;;
-        2) printf '%-18s %s+ added (%s)%s\n' "$pkg" "$grn" "$v1" "$rst" ;;
-        3) printf '%-18s %s- removed (%s)%s\n' "$pkg" "$red" "$v1" "$rst" ;;
-        4) printf '%-18s %s· kept back (%s)%s\n' "$pkg" "$dim" "$v1" "$rst" ;;
+        1) printf '%-32s %s↑ updated %s => %s%s\n' "$pkg" "$grn" "$v1" "$v2" "$rst" ;;
+        2) printf '%-32s %s+ added (%s)%s\n' "$pkg" "$grn" "$v1" "$rst" ;;
+        3) printf '%-32s %s- removed (%s)%s\n' "$pkg" "$red" "$v1" "$rst" ;;
+        4) printf '%-32s %s· kept back (%s)%s\n' "$pkg" "$dim" "$v1" "$rst" ;;
       esac
     done
 }
@@ -244,19 +244,19 @@ update-apt-all() {
     sudo apt update 2>&1 | tee "$logdir/apt-update.log"
     rc=${PIPESTATUS[0]}
   else
-    printf '%s%-18s ...%s' "$dim" "apt update" "$rst"
+    printf '%s%-32s ...%s' "$dim" "apt update" "$rst"
     sudo apt update </dev/null >"$logdir/apt-update.log" 2>&1
     rc=$?
     printf '\r\033[K'
   fi
 
   if [ "$rc" -ne 0 ]; then
-    printf '%-18s %sx failed (exit %s)%s\n' "apt update" "$red" "$rc" "$rst"
+    printf '%-32s %sx failed (exit %s)%s\n' "apt update" "$red" "$rc" "$rst"
     tail -n 10 "$logdir/apt-update.log" | sed 's/^/  /'
-    printf '%-18s %s· skipped (update failed)%s\n' "apt upgrade" "$dim" "$rst"
+    printf '%-32s %s· skipped (update failed)%s\n' "apt upgrade" "$dim" "$rst"
     failed=1
   else
-    printf '%-18s %s✓ done%s\n' "apt update" "$grn" "$rst"
+    printf '%-32s %s✓ done%s\n' "apt update" "$grn" "$rst"
 
     # captured before the upgrade, so packages apt keeps back (held, phased)
     # can be told apart from the ones it actually changed
@@ -267,18 +267,18 @@ update-apt-all() {
       sudo apt dist-upgrade -y --autoremove --purge "${dpkg_opts[@]}" 2>&1 | tee "$logdir/apt-upgrade.log"
       rc=${PIPESTATUS[0]}
     else
-      printf '%s%-18s ...%s' "$dim" "apt upgrade" "$rst"
+      printf '%s%-32s ...%s' "$dim" "apt upgrade" "$rst"
       sudo apt dist-upgrade -y --autoremove --purge "${dpkg_opts[@]}" </dev/null >"$logdir/apt-upgrade.log" 2>&1
       rc=$?
       printf '\r\033[K'
     fi
 
     if [ "$rc" -ne 0 ]; then
-      printf '%-18s %sx failed (exit %s)%s\n' "apt upgrade" "$red" "$rc" "$rst"
+      printf '%-32s %sx failed (exit %s)%s\n' "apt upgrade" "$red" "$rc" "$rst"
       tail -n 10 "$logdir/apt-upgrade.log" | sed 's/^/  /'
       failed=1
     else
-      printf '%-18s %s✓ done%s\n' "apt upgrade" "$grn" "$rst"
+      printf '%-32s %s✓ done%s\n' "apt upgrade" "$grn" "$rst"
     fi
 
     dpkg-query -W -f='${binary:Package} ${Version}\n' | sort > "$after"
@@ -287,7 +287,7 @@ update-apt-all() {
     if [ -n "$rows" ]; then
       printf '%s\n' "$rows"
     else
-      printf '%-18s %s· nothing changed%s\n' "apt" "$dim" "$rst"
+      printf '%-32s %s· nothing changed%s\n' "apt" "$dim" "$rst"
     fi
   fi
 
@@ -365,7 +365,7 @@ update-user-tools() {
       "$@" 2>&1 | tee "$logdir/$label.log"
       rc=${PIPESTATUS[0]}
     else
-      printf '%s%-18s ...%s' "$dim" "$label" "$rst"
+      printf '%s%-32s ...%s' "$dim" "$label" "$rst"
       "$@" </dev/null >"$logdir/$label.log" 2>&1
       rc=$?
       printf '\r\033[K'
@@ -377,7 +377,7 @@ update-user-tools() {
   local wb_dir="$HOME/Applications/WinBox"
   local wb_marker="$HOME/Applications/WinBox.version"
   if [ ! -x "$wb_dir/WinBox" ]; then
-    printf '%-18s %s· skipped (not installed)%s\n' winbox "$dim" "$rst"
+    printf '%-32s %s· skipped (not installed)%s\n' winbox "$dim" "$rst"
   else
     local zip latest current
     zip=$(_uut_winbox_zip)
@@ -386,13 +386,13 @@ update-user-tools() {
     latest=${latest%%/*}
     current=$(cat "$wb_marker" 2>/dev/null)
     if [ -z "$zip" ]; then
-      printf '%-18s %sx failed (no release found)%s\n' winbox "$red" "$rst"
+      printf '%-32s %sx failed (no release found)%s\n' winbox "$red" "$rst"
       failed=1
     elif [ "$latest" = "$current" ]; then
       if _uut_winbox_desktop "$wb_dir"; then
-        printf '%-18s %s· already latest (%s)%s\n' winbox "$dim" "$latest" "$rst"
+        printf '%-32s %s· already latest (%s)%s\n' winbox "$dim" "$latest" "$rst"
       else
-        printf '%-18s %sx failed (desktop entry)%s\n' winbox "$red" "$rst"
+        printf '%-32s %sx failed (desktop entry)%s\n' winbox "$red" "$rst"
         failed=1
       fi
     elif _uut_run winbox curl -fsSL --max-time 600 "https://download.mikrotik.com/$zip" -o "$logdir/winbox.zip" &&
@@ -403,23 +403,23 @@ update-user-tools() {
       if [ "$new_hash" = "$old_hash" ]; then
         printf '%s\n' "$latest" > "$wb_marker"
         if _uut_winbox_desktop "$wb_dir"; then
-          printf '%-18s %s· already latest (%s)%s\n' winbox "$dim" "$latest" "$rst"
+          printf '%-32s %s· already latest (%s)%s\n' winbox "$dim" "$latest" "$rst"
         else
-          printf '%-18s %sx failed (desktop entry)%s\n' winbox "$red" "$rst"
+          printf '%-32s %sx failed (desktop entry)%s\n' winbox "$red" "$rst"
           failed=1
         fi
       elif _uut_run winbox _uut_winbox_install "$logdir/winbox" "$wb_dir" "$latest" "$wb_marker"; then
         if [ -n "$current" ]; then
-          printf '%-18s %s↑ updated %s => %s%s\n' winbox "$grn" "$current" "$latest" "$rst"
+          printf '%-32s %s↑ updated %s => %s%s\n' winbox "$grn" "$current" "$latest" "$rst"
         else
-          printf '%-18s %s↑ updated => %s%s\n' winbox "$grn" "$latest" "$rst"
+          printf '%-32s %s↑ updated => %s%s\n' winbox "$grn" "$latest" "$rst"
         fi
       else
-        printf '%-18s %sx failed (exit %s)%s\n' winbox "$red" "$?" "$rst"
+        printf '%-32s %sx failed (exit %s)%s\n' winbox "$red" "$?" "$rst"
         failed=1
       fi
     else
-      printf '%-18s %sx failed (download)%s\n' winbox "$red" "$rst"
+      printf '%-32s %sx failed (download)%s\n' winbox "$red" "$rst"
       failed=1
     fi
   fi
