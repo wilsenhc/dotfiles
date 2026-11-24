@@ -455,6 +455,19 @@ while IFS= read -r skill_source; do
   bunx skills add "$skill_source" -g --all
 done < "$repo_dir/packages/skills.txt"
 
+# Impeccable ships its own CLI: it installs the OpenCode skill and the
+# /impeccable command together. The generic skills list used to install only
+# the skill into ~/.agents, so remove that copy before the official install.
+step=Impeccable
+if [ -f "$HOME/.agents/skills/impeccable/SKILL.md" ]; then
+  bunx skills remove -g -y impeccable >/dev/null 2>&1 || true
+fi
+if [ -f "$HOME/.config/opencode/skills/impeccable/SKILL.md" ]; then
+  timeout 600 bunx impeccable@latest update -y --global
+else
+  bunx impeccable@latest install -y --global --providers=opencode
+fi
+
 say "Developer and user tools installed."
 
 say ""

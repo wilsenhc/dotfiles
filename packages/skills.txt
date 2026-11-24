@@ -1,5 +1,8 @@
 # Global AI/agent skills installed by install.sh with:
 #   bunx skills add <source> -g --all
+#
+# Impeccable is not here: its own CLI installs the OpenCode skill and the
+# /impeccable command, so install.sh and update-dev-tools manage it directly.
 wilsenhc/skills
 addyosmani/web-quality-skills
 alinaqi/maggy
@@ -7,5 +10,4 @@ DietrichGebert/ponytail
 herdrdev/herdr
 laravel/agent-skills
 mattpocock/skills
-pbakaus/impeccable
 vercel-labs/skills

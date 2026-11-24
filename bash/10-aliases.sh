@@ -34,6 +34,12 @@ update-dev-tools() {
     elif [ "$1" = global-skills ]; then
       # skills have no version; the lock hash moves when one is updated
       md5sum "$HOME/.agents/.skill-lock.json" 2>/dev/null | cut -c1-7
+    elif [ "$1" = impeccable ]; then
+      # the installed SKILL.md carries the compiled skill version
+      local skill="$HOME/.config/opencode/skills/impeccable/SKILL.md"
+      [ -f "$skill" ] || skill="$HOME/.agents/skills/impeccable/SKILL.md"
+      sed -n 's/^[[:space:]]*version:[[:space:]]*//p' "$skill" 2>/dev/null |
+        head -n1 | tr -d "\"'"
     elif [ "$1" = opencode-gui ]; then
       # the desktop app is a .deb, so its version lives in dpkg
       dpkg-query -W -f='${Version}' opencode 2>/dev/null
@@ -51,6 +57,11 @@ update-dev-tools() {
       opencode-gui)  dpkg-query -W opencode >/dev/null 2>&1 ;;
       gitkraken)     dpkg-query -W gitkraken >/dev/null 2>&1 ;;
       herdr-plugins) command -v herdr >/dev/null 2>&1 ;;
+      impeccable)
+        command -v bunx >/dev/null 2>&1 &&
+          { [ -f "$HOME/.config/opencode/skills/impeccable/SKILL.md" ] ||
+            [ -f "$HOME/.agents/skills/impeccable/SKILL.md" ]; }
+        ;;
       global-skills) command -v bun >/dev/null 2>&1 ;;
       *)             command -v "$1" >/dev/null 2>&1 ;;
     esac
@@ -61,7 +72,7 @@ update-dev-tools() {
   local arch
   arch=$(dpkg --print-architecture 2>/dev/null) || arch=amd64
   local tool label cmd before after rc failed=0 skip latest
-  for tool in node npm bun lerd opencode opencode-gui herdr-core herdr herdr-app herdr-plugins global-skills gitkraken; do
+  for tool in node npm bun lerd opencode opencode-gui herdr-core herdr herdr-app herdr-plugins impeccable global-skills gitkraken; do
     label=$tool
     if [ "$tool" = herdr ]; then label=herdr-cli; fi
     if ! _udt_present "$tool"; then
@@ -110,6 +121,12 @@ update-dev-tools() {
         ;;
       # last, so plugins update against the herdr CLI installed just above
       herdr-plugins) cmd=(herdr plugin update --yes) ;;
+      # Impeccable's CLI updates both the skill and the /impeccable command
+      impeccable)
+        latest=$(bun info impeccable version 2>/dev/null)
+        [ -n "$latest" ] && [ "$latest" = "$before" ] && skip=1
+        cmd=(timeout 600 bunx impeccable@latest update -y --global)
+        ;;
       # -g keeps it to ~/.agents/skills, -y so it never stops on a prompt
       global-skills) cmd=(bunx skills update -g -y) ;;
       gitkraken)
