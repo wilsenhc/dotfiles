@@ -4,9 +4,29 @@ My dotfiles, shell scripts and configuration files, kept in one repository so th
 
 ## Goal
 
-- **Reproducible** — the same files and settings on every machine.
-- **Installable** — one script applies the repository to a fresh installation.
-- **Safe to re-run** — anything the installer replaces is backed up first.
+- **Repeatable** — the same packages, tools and managed configuration on every machine. Versions are not pinned; see [Versioning](#versioning).
+- **Installable** — one script applies the repository to a fresh Ubuntu installation.
+- **Safe to re-run** — anything the installer replaces is backed up first and can be restored.
+
+## Status
+
+Implemented:
+
+- apt package installation and removal, plus the vendor repositories listed below
+- shell fragments loaded from `~/.bashrc.d`, with aliases and the update commands
+- Git config, login environment, host-local `.local` includes, and OpenCode config snapshots
+- backup sets, state manifest, `dotfiles doctor`, restore, and the weekly update check
+- non-apt developer/user tools, global AI skills, and the PIA + lerd DNS helper
+- best-effort checksum verification and CI for ShellCheck and installer flags
+
+Not managed by this repository yet:
+
+- SSH configuration (intentionally left manual)
+- prompt, history and completion customization
+- editor and application configs such as VS Code, Ghostty and tmux
+- credential stores and secrets
+- a general linker for arbitrary application configs (only Git, profile and OpenCode are managed)
+- unattended autoinstall and full checksum coverage for every vendor
 
 ## Layout
 
@@ -14,13 +34,19 @@ My dotfiles, shell scripts and configuration files, kept in one repository so th
 dotfiles/
 ├── install.sh           applies this repository to the current machine
 ├── bash/                shell fragments, linked to ~/.bashrc.d
-├── bin/                 helper scripts installed into ~/.local/bin
+├── bin/                 dotfiles CLI and helpers installed into ~/.local/bin
+├── home/                managed config files (Git)
+├── lib/                 shared state and backup helpers
+├── profile/             login fragments, linked to ~/.profile.d
 ├── packages/apt.txt     apt packages install.sh installs
 ├── packages/apt-remove.txt  apt packages install.sh purges
 ├── packages/skills.txt  global AI/agent skills install.sh installs
 ├── systemd/user/        user units installed into ~/.config/systemd/user
 ├── docs/bashrc.md       what every alias, function and hook does
+├── docs/configuration.md  Git, login environment and host-local files
+├── docs/operations.md   backups, state, doctor, checksums and update checks
 ├── docs/pia-lerd.md     the PIA VPN + lerd DNS compatibility setup
+├── docs/post-install.md manual sign-in checklist
 ├── .shellcheckrc        ShellCheck policy used locally and in CI
 ├── .github/workflows/   syntax and ShellCheck CI
 ├── LICENSE
@@ -30,7 +56,7 @@ dotfiles/
 ## Install
 
 ```bash
-git clone <repository-url> ~/dotfiles
+git clone https://github.com/wilsenhc/dotfiles.git ~/dotfiles
 ~/dotfiles/install.sh
 ```
 
@@ -43,23 +69,53 @@ Any clone location works; the script resolves paths from its own directory.
 1. Refuses to run as root or on anything but Ubuntu.
 2. Purges the packages listed in `packages/apt-remove.txt` (LibreOffice by default).
 3. Installs the packages listed in `packages/apt.txt` (the Microsoft-fonts EULA is preseeded so the run stays unattended).
-4. Links `~/.bashrc.d` to `bash/` in the repo, moving aside any existing `~/.bashrc.d`.
+4. Links `~/.bashrc.d` to `bash/` and `~/.profile.d` to `profile/`, moving existing directories aside through the backup system.
 5. Replaces the marker block in `~/.bashrc` with a loop that sources `~/.bashrc.d/*.sh`; everything outside the markers is untouched.
-6. Moves `~/.bash_aliases` to a timestamped backup, since its contents now live in the repo.
-7. Adds the vendor repositories below and installs their apps.
-8. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, PIA VPN, GitKraken), the global skills manifest, and Impeccable's OpenCode skill and `/impeccable` command.
+6. Appends a marker block to `~/.profile` that sources `~/.profile.d/*.sh`.
+7. Adds a managed `[include]` block to `~/.gitconfig`, preserving user settings and keeping identity in `~/.gitconfig.local`.
+8. Removes `~/.bash_aliases` after backing it up, since its contents now live in the repo.
+9. Installs the `dotfiles` CLI, snapshots OpenCode configs, and enables the weekly update-check timer.
+10. Adds the vendor repositories below and installs their apps.
+11. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, PIA VPN, GitKraken), the global skills manifest, and Impeccable's OpenCode skill and `/impeccable` command. When lerd is also present, it installs the PIA DNS helper and zone pin.
 
-Files it replaces are kept as `<name>.bak-<timestamp>`. Running it again is safe: completed steps are repeated idempotently, and the tool installers may pick up newer upstream releases. Open a new shell afterwards, or run `source ~/.bashrc`.
+Files it replaces under `$HOME` are copied to `~/.local/state/dotfiles/backups/<timestamp>/` with a manifest; the last ten sets are kept. `dotfiles restore <timestamp>` puts a set back. Conflicting apt source files keep a `.bak-<timestamp>` beside the original. Running the installer again is safe: completed steps are repeated idempotently, and the tool installers may pick up newer upstream releases. Open a new shell afterwards, or run `source ~/.bashrc`.
+
+## Updating
+
+`update-all` runs the four updaters in order:
+
+```bash
+update-all          # summary only
+update-all -v       # full command output
+```
+
+It runs `update-dotfiles`, `update-apt-all`, `update-dev-tools` and `update-user-tools`, and each can also be run alone. See [docs/bashrc.md](docs/bashrc.md) for the per-tool behavior.
+
+`dotfiles update-check` reports repository commits and tool updates without installing anything. The weekly user timer runs it on Monday at 10:00, sends a desktop notification when something is pending, and logs to `~/.local/state/dotfiles/update-check.log`.
+
+## Versioning
+
+Every installer fetches the latest available version. There is no lockfile, no apt snapshot and no version matrix: two installs on different dates can produce different versions. That is intentional. `update-all` is the supported way to keep an existing machine current, and the backup sets cover managed files, not package or tool versions.
 
 ## Shell
 
 | Fragment | Contains |
 | --- | --- |
-| `bash/10-aliases.sh` | `art`, `sail`, and the update functions: `update-dotfiles`, `update-apt-all`, `update-dev-tools`, `update-user-tools`, and `update-all` |
+| `bash/00-env.sh` | shared `PATH`, `PAGER` and `LESS` for login and interactive shells |
+| `bash/10-aliases.sh` | `art`, `sail`, and the update functions: `update-dotfiles`, `update-apt-all`, `update-dev-tools`, `update-user-tools`, `update-all`, plus state recording |
 | `bash/30-xone-pair.sh` | `xone-pair`, the Xbox Wireless Adapter pairing helper |
 | `bash/90-herdr-hook.sh` | herdr live tab-naming hook |
+| `bash/99-local.sh` | sources `~/.bashrc.local` |
 
 See [docs/bashrc.md](docs/bashrc.md) for what each one does and the tools it depends on.
+
+## Configuration, state and backups
+
+- Git settings, login environment, host-local files and OpenCode snapshots: [docs/configuration.md](docs/configuration.md)
+- Backups, restore, state manifest, doctor, checksums and the update timer: [docs/operations.md](docs/operations.md)
+- Manual sign-in steps after install: [docs/post-install.md](docs/post-install.md)
+
+`dotfiles doctor` checks the machine, `dotfiles backups` lists restore points, and `dotfiles state` prints the inventory at `~/.local/state/dotfiles/state.json`.
 
 ## Packages
 
@@ -123,7 +179,10 @@ Ubuntu's autoinstall reference, for when it is:
 ## Notes
 
 - Target platform: Ubuntu only. `install.sh` refuses other distributions because several packages and all vendor repositories are Ubuntu-specific.
-- Machine-specific settings, secrets and hardware helpers stay out of the repository.
+- SSH configuration is intentionally not managed; keys and host rules stay manual.
+- Machine-specific non-secret values belong in `~/.gitconfig.local`, `~/.profile.local` or `~/.bashrc.local`. Secrets belong in a password manager.
+- The xone-pair helper and the PIA + lerd DNS workaround are portable, checked-in exceptions to the “hardware stays out” rule; general hardware quirks still stay out.
+- Versions are latest-by-design; see [Versioning](#versioning).
 
 ## License
 

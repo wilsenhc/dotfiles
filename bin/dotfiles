@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# dotfiles: inspect state, restore backups, and check for updates.
+set -uo pipefail
+
+repo=$(readlink -f "$HOME/.bashrc.d" 2>/dev/null || true)
+repo=${repo%/bash}
+if [ -z "$repo" ] || [ ! -r "$repo/lib/dotfiles.sh" ]; then
+  printf 'dotfiles: repository not found; run install.sh first\n' >&2
+  exit 1
+fi
+# shellcheck source=../lib/dotfiles.sh
+. "$repo/lib/dotfiles.sh"
+# The timer runs without an interactive shell; load the same PATH and nvm.
+[ -r "$repo/bash/00-env.sh" ] && . "$repo/bash/00-env.sh"
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: dotfiles <command> [options]
+
+Commands:
+  doctor                 check installed tools and manual setup
+  restore <timestamp>    restore a backup set (--delete-created for created files)
+  backups                list backup sets
+  state [--path]         show the state manifest
+  update-check           report pending repo and tool updates
+EOF
+}
+
+_colors() {
+  dim='' grn='' red='' rst=''
+  if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    dim=$'\033[2m' grn=$'\033[32m' red=$'\033[31m' rst=$'\033[0m'
+  fi
+}
+
+cmd_doctor() {
+  _colors
+  local missing=0
+  _row() { printf '%-32s %s\n' "$1" "$2"; }
+
+  printf '\n%s==> dotfiles doctor%s\n\n' "$dim" "$rst"
+
+  if [ -n "$(git config --global --includes user.email 2>/dev/null)" ] &&
+     [ -n "$(git config --global --includes user.name 2>/dev/null)" ]; then
+    _row "git identity" "${grn}ok${rst}"
+  else
+    _row "git identity" "${dim}manual (set ~/.gitconfig.local)${rst}"
+  fi
+
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    _row "github cli" "${grn}ok${rst}"
+  else
+    _row "github cli" "${dim}manual (run gh auth login)${rst}"
+  fi
+
+  if find "$HOME/.ssh" -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' -print -quit 2>/dev/null | grep -q .; then
+    _row "ssh keys" "${grn}ok${rst}"
+  else
+    _row "ssh keys" "${dim}manual (add a key under ~/.ssh)${rst}"
+  fi
+
+  if id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+    _row "docker group" "${grn}ok${rst}"
+  else
+    _row "docker group" "${dim}manual (log out and back in)${rst}"
+  fi
+
+  if [ -x /opt/piavpn/bin/piactl ] &&
+     systemctl is-active --quiet piavpn 2>/dev/null; then
+    _row "pia vpn" "${grn}ok ($(/opt/piavpn/bin/piactl --version 2>/dev/null))${rst}"
+  elif [ -x /opt/piavpn/bin/piactl ]; then
+    _row "pia vpn" "${red}missing (piavpn service inactive)${rst}"
+    missing=1
+  else
+    _row "pia vpn" "${dim}manual (install PIA)${rst}"
+  fi
+
+  if [ -s "$HOME/.local/share/opencode/auth.json" ]; then
+    _row "opencode auth" "${grn}ok${rst}"
+  else
+    _row "opencode auth" "${dim}manual (sign in to opencode)${rst}"
+  fi
+
+  if [ -f "$DOTFILES_STATE_FILE" ]; then
+    _row "state manifest" "${grn}ok${rst}"
+  else
+    _row "state manifest" "${red}missing (run install.sh)${rst}"
+    missing=1
+  fi
+
+  if systemctl --user is-enabled --quiet dotfiles-update-check.timer 2>/dev/null &&
+     systemctl --user is-active --quiet dotfiles-update-check.timer 2>/dev/null; then
+    _row "update timer" "${grn}ok${rst}"
+  else
+    _row "update timer" "${red}missing (enable dotfiles-update-check.timer)${rst}"
+    missing=1
+  fi
+
+  if [ "$missing" = 1 ]; then
+    printf '\n%smissing items above need attention%s\n' "$red" "$rst"
+    return 1
+  fi
+  printf '\n%severything checked is in place%s\n' "$grn" "$rst"
+}
+
+cmd_restore() {
+  _colors
+  local name=${1:-} delete_created=0 set manifest failed=0
+  case "${2:-}" in
+    --delete-created) delete_created=1 ;;
+    "") ;;
+    *) printf 'dotfiles restore: unknown option %s\n' "$2" >&2; return 1 ;;
+  esac
+  if [ -z "$name" ]; then
+    printf 'usage: dotfiles restore <timestamp> [--delete-created]\n' >&2
+    return 1
+  fi
+  case $name in
+    */*) set=$name ;;
+    *) set="$DOTFILES_BACKUP_DIR/$name" ;;
+  esac
+  case $set in
+    "$DOTFILES_BACKUP_DIR"/*) ;;
+    *) printf 'dotfiles restore: not a dotfiles backup set: %s\n' "$set" >&2; return 1 ;;
+  esac
+  manifest="$set/manifest.json"
+  [ -f "$manifest" ] || { printf 'dotfiles restore: no manifest in %s\n' "$set" >&2; return 1; }
+
+  printf '\n%s==> dotfiles restore %s%s\n\n' "$dim" "$(basename "$set")" "$rst"
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    local target backup existed restore
+    target=$(jq -r '.target' <<<"$entry")
+    backup=$(jq -r '.backup' <<<"$entry")
+    existed=$(jq -r '.existed' <<<"$entry")
+    restore=$(jq -r '.restore' <<<"$entry")
+
+    if [ "$restore" != true ]; then
+      printf '%-32s %s· skipped (snapshot)%s\n' "$(basename "$target")" "$dim" "$rst"
+      continue
+    fi
+    if [ "$existed" = true ]; then
+      if [ -z "$backup" ] || { [ ! -e "$set/$backup" ] && [ ! -L "$set/$backup" ]; }; then
+        printf '%-32s %sx failed (backup missing)%s\n' "$(basename "$target")" "$red" "$rst"
+        failed=1
+        continue
+      fi
+      mkdir -p "$(dirname "$target")" || { failed=1; continue; }
+      rm -rf -- "$target"
+      if cp -a -- "$set/$backup" "$target"; then
+        printf '%-32s %s↑ restored%s\n' "$(basename "$target")" "$grn" "$rst"
+      else
+        printf '%-32s %sx failed (restore)%s\n' "$(basename "$target")" "$red" "$rst"
+        failed=1
+      fi
+    elif [ "$delete_created" = 1 ]; then
+      rm -rf -- "$target"
+      printf '%-32s %s- removed (created by install)%s\n' "$(basename "$target")" "$dim" "$rst"
+    else
+      printf '%-32s %s· kept (created by install)%s\n' "$(basename "$target")" "$dim" "$rst"
+    fi
+  done < <(jq -c '.entries[]' "$manifest" 2>/dev/null)
+
+  dotfiles_state_last_run restore 2>/dev/null || true
+  return "$failed"
+}
+
+cmd_backups() {
+  _colors
+  printf '\n%s==> dotfiles backups%s\n\n' "$dim" "$rst"
+  if [ ! -d "$DOTFILES_BACKUP_DIR" ]; then
+    printf '%-32s %s· none%s\n' backups "$dim" "$rst"
+    return 0
+  fi
+  local found=0 d manifest created entries size
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    found=1
+    manifest="$d/manifest.json"
+    if [ -f "$manifest" ]; then
+      created=$(jq -r '.created_at // "unknown"' "$manifest" 2>/dev/null)
+      entries=$(jq -r '.entries | length' "$manifest" 2>/dev/null)
+    else
+      created=unknown
+      entries=0
+    fi
+    size=$(du -sh "$d" 2>/dev/null | cut -f1)
+    printf '%-32s %s %s (%s entries)\n' "$(basename "$d")" "$created" "$size" "$entries"
+  done < <(find "$DOTFILES_BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%p\n' 2>/dev/null | sort -r)
+  [ "$found" = 1 ] || printf '%-32s %s· none%s\n' backups "$dim" "$rst"
+}
+
+cmd_state() {
+  if [ "${1:-}" = --path ]; then
+    printf '%s\n' "$DOTFILES_STATE_FILE"
+    return 0
+  fi
+  [ -f "$DOTFILES_STATE_FILE" ] || { printf 'dotfiles state: no state manifest; run install.sh\n' >&2; return 1; }
+  jq . "$DOTFILES_STATE_FILE"
+}
+
+cmd_update_check() {
+  local repo behind=0 tool_out user_out pending=0 unknown=0 summary log
+  repo=$(dotfiles_repo_root) || { printf 'dotfiles update-check: repository not found\n' >&2; return 1; }
+
+  if git -C "$repo" fetch --quiet 2>/dev/null; then
+    behind=$(git -C "$repo" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)
+  else
+    behind=0
+  fi
+  case $behind in ''|*[!0-9]*) behind=0 ;; esac
+
+  # shellcheck source=../bash/10-aliases.sh
+  . "$repo/bash/10-aliases.sh"
+  tool_out=$(NO_COLOR=1 update-dev-tools --check 2>&1 || true)
+  user_out=$(NO_COLOR=1 update-user-tools --check 2>&1 || true)
+  pending=$(printf '%s\n%s\n' "$tool_out" "$user_out" | grep -c '↑ update available' || true)
+  unknown=$(printf '%s\n%s\n' "$tool_out" "$user_out" | grep -c '? check unavailable' || true)
+  pending=${pending:-0}
+  unknown=${unknown:-0}
+
+  summary="repo: $behind commit(s) behind; tools: $pending update(s), $unknown check(s) unavailable"
+  log="$DOTFILES_STATE_DIR/update-check.log"
+  mkdir -p "$DOTFILES_STATE_DIR" 2>/dev/null || true
+  printf '[%s] %s\n' "$(dotfiles_now)" "$summary" >>"$log" 2>/dev/null || true
+  printf '%s\n' "$summary"
+
+  if { [ "$behind" -gt 0 ] || [ "$pending" -gt 0 ]; } &&
+     { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; } &&
+     command -v notify-send >/dev/null 2>&1; then
+    notify-send -a dotfiles "Dotfiles updates available" "$summary" 2>/dev/null || true
+  fi
+}
+
+case "${1:-}" in
+  doctor) shift; cmd_doctor "$@" ;;
+  restore) shift; cmd_restore "$@" ;;
+  backups) shift; cmd_backups "$@" ;;
+  state) shift; cmd_state "$@" ;;
+  update-check) shift; cmd_update_check "$@" ;;
+  -h|--help|help|"") usage ;;
+  *)
+    printf 'dotfiles: unknown command: %s\n\n' "$1" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,27 @@
+# Managed by the dotfiles repo. Keep machine values in ~/.gitconfig.local.
+
+[include]
+    path = ~/.gitconfig.local
+
+[init]
+    defaultBranch = main
+
+[pull]
+    ff = only
+
+[fetch]
+    prune = true
+
+[push]
+    autoSetupRemote = true
+
+[color]
+    ui = auto
+
+[alias]
+    st = status -sb
+    co = checkout
+    br = branch
+    lg = log --oneline --graph --decorate --all
+    last = log -1 --stat
+    unstage = reset HEAD --

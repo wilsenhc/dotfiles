@@ -10,9 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Syntax
-        run: bash -n install.sh bash/*.sh bin/*.sh
+        run: bash -n install.sh bash/*.sh bin/*.sh bin/dotfiles lib/*.sh profile/*.sh
       - name: ShellCheck
-        run: shellcheck install.sh bash/*.sh bin/*.sh
+        run: shellcheck install.sh bash/*.sh bin/*.sh bin/dotfiles lib/*.sh profile/*.sh
       - name: Installer flags
         run: |
           ./install.sh --help >/dev/null

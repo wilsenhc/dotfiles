@@ -1,0 +1,7 @@
+[Unit]
+Description=Check for dotfiles and tool updates
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dotfiles update-check

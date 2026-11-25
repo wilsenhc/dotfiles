@@ -22,6 +22,7 @@ vlc
 gnome-tweaks
 ubuntu-restricted-addons
 ttf-mscorefonts-installer
+libnotify-bin
 
 # PIA VPN: its .run installer checks for these and would apt-get them itself
 libxkbcommon-x11-0

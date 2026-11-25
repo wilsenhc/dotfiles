@@ -1,18 +1,56 @@
 # Shell aliases and update functions.
 # Loaded from ~/.bashrc.d/ by the managed block in ~/.bashrc; see docs/bashrc.md.
 
+# Share state/backup helpers with install.sh and bin/dotfiles without making
+# every shell depend on ~/.local/bin being on PATH.
+_dotfiles_fragment=$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || true)
+if [ -n "$_dotfiles_fragment" ]; then
+  _dotfiles_repo=$(dirname "$(dirname "$_dotfiles_fragment")")
+  if [ -r "$_dotfiles_repo/lib/dotfiles.sh" ]; then
+    # shellcheck disable=SC1090
+    . "$_dotfiles_repo/lib/dotfiles.sh"
+  fi
+fi
+unset _dotfiles_fragment _dotfiles_repo
+
 # laravel artisan
 alias art='[ -f artisan ] && php artisan'
 
 # laravel sail alias
 alias sail='sh $([ -f sail ] && echo sail || echo vendor/bin/sail)'
 
+# internal: install the opencode desktop .deb after verifying the publisher's
+# SHA-256 from the desktop manifest.
+_udt_opencode_install() {
+  local version=$1 arch=$2 deb expected rc
+  deb=$(mktemp --suffix=.deb) || return 1
+  if ! curl -fsSL "https://opencode.ai/files/bin/$version/opencode-desktop-linux-$arch.deb" -o "$deb"; then
+    rm -f "$deb"
+    return 1
+  fi
+  expected=$(dotfiles_opencode_deb_sha256 "$arch")
+  if [ -z "$expected" ]; then
+    printf 'warning: opencode desktop checksum unavailable; continuing\n' >&2
+  elif ! dotfiles_verify_sha256 "$deb" "$expected"; then
+    printf 'error: opencode desktop checksum mismatch\n' >&2
+    rm -f "$deb"
+    return 1
+  fi
+  sudo -n apt-get install -y "$deb"
+  rc=$?
+  rm -f "$deb"
+  return "$rc"
+}
+
 # update-dev-tools: update every developer tool installed on this machine.
-# Usage: update-dev-tools [-v|--verbose]
+# Usage: update-dev-tools [-v|--verbose|--check]
 # Missing tools are reported as skipped; see docs/bashrc.md.
 update-dev-tools() {
-  local verbose=0
-  case "${1:-}" in -v|--verbose) verbose=1 ;; esac
+  local verbose=0 check=0
+  case "${1:-}" in
+    -v|--verbose) verbose=1 ;;
+    --check) check=1 ;;
+  esac
 
   if [ "$(id -u)" -eq 0 ]; then
     printf 'update-dev-tools: run as your user, not root (it updates tools under %s)\n' "$HOME" >&2
@@ -24,7 +62,11 @@ update-dev-tools() {
     dim=$'\033[2m' grn=$'\033[32m' red=$'\033[31m' rst=$'\033[0m'
   fi
 
-  printf '\n%s==> update-dev-tools%s\n' "$dim" "$rst"
+  if [ "$check" = 1 ]; then
+    printf '\n%s==> update-dev-tools --check%s\n' "$dim" "$rst"
+  else
+    printf '\n%s==> update-dev-tools%s\n' "$dim" "$rst"
+  fi
 
   _udt_ver() {
     if [ "$1" = herdr-plugins ]; then
@@ -85,6 +127,7 @@ update-dev-tools() {
 
     before=$(_udt_ver "$tool")
     skip=0
+    latest=
     case $tool in
       node)       cmd=(nvm install --lts) ;;
       npm)        cmd=(nvm install-latest-npm) ;;
@@ -117,7 +160,7 @@ update-dev-tools() {
           sed -n 's/^version:[[:space:]]*//p' | head -n1)
         # unknown latest, not installed, or already current: leave it alone
         if [ -z "$latest" ] || [ -z "$before" ] || [ "$latest" = "$before" ]; then skip=1; fi
-        cmd=(bash -o pipefail -c "curl -fsSL https://opencode.ai/files/bin/$latest/opencode-desktop-linux-$arch.deb -o /tmp/opencode-desktop.deb && sudo -n apt-get install -y /tmp/opencode-desktop.deb && rm -f /tmp/opencode-desktop.deb")
+        cmd=(_udt_opencode_install "$latest" "$arch")
         ;;
       # last, so plugins update against the herdr CLI installed just above
       herdr-plugins) cmd=(herdr plugin update --yes) ;;
@@ -144,6 +187,17 @@ update-dev-tools() {
         ;;
     esac
 
+    if [ "$check" = 1 ]; then
+      if [ -z "$before" ] || [ -z "$latest" ]; then
+        printf '%-32s %s? check unavailable%s\n' "$label" "$dim" "$rst"
+      elif [ "$skip" = 1 ]; then
+        printf '%-32s %s· up to date (%s)%s\n' "$label" "$dim" "$before" "$rst"
+      else
+        printf '%-32s %s↑ update available (%s => %s)%s\n' "$label" "$grn" "$before" "$latest" "$rst"
+      fi
+      continue
+    fi
+
     if [ "$verbose" = 1 ]; then
       printf '\n%s==> %s%s\n' "$dim" "$label" "$rst"
     fi
@@ -161,6 +215,9 @@ update-dev-tools() {
       printf '\r\033[K'
     fi
     after=$(_udt_ver "$tool")
+    if [ -n "$after" ]; then
+      dotfiles_state_tool "$tool" "$after" || true
+    fi
 
     if [ "$rc" -ne 0 ]; then
       printf '%-32s %sx failed (exit %s)%s\n' "$label" "$red" "$rc" "$rst"
@@ -174,6 +231,9 @@ update-dev-tools() {
     fi
   done
 
+  if [ "$check" = 0 ]; then
+    dotfiles_state_last_run update-dev-tools || true
+  fi
   if [ "$failed" = 1 ]; then
     printf '\n%slogs: %s%s\n' "$dim" "$logdir" "$rst"
     return 1
@@ -310,6 +370,7 @@ update-apt-all() {
     fi
   fi
 
+  dotfiles_state_last_run update-apt-all || true
   if [ "$failed" = 1 ]; then
     printf '\n%slogs: %s%s\n' "$dim" "$logdir" "$rst"
     return 1
@@ -321,6 +382,33 @@ update-apt-all() {
 _uut_winbox_zip() {
   curl -fsSL --max-time 20 https://mikrotik.com/download/winbox 2>/dev/null |
     grep -oE 'routeros/winbox/[0-9.]+/WinBox_Linux\.zip' | head -n1
+}
+
+# internal: verify the WinBox zip against MikroTik's .sha256 sidecar.
+# Returns 0 verified, 1 mismatch, 2 checksum unavailable.
+_uut_winbox_verify() {
+  local zip=$1 file=$2 expected actual
+  expected=$(curl -fsSL --max-time 20 "https://download.mikrotik.com/$zip.sha256" 2>/dev/null |
+    awk '{print $1}' | head -n1)
+  [ -n "$expected" ] || return 2
+  actual=$(dotfiles_sha256 "$file") || return 1
+  [ "$expected" = "$actual" ]
+}
+
+# internal: download, verify and unpack the WinBox zip.
+# Usage: _uut_winbox_fetch <zip path> <work dir>
+_uut_winbox_fetch() {
+  local zip=$1 dir=$2 verify_rc=0
+  curl -fsSL --max-time 600 "https://download.mikrotik.com/$zip" -o "$dir/winbox.zip" || return 1
+  _uut_winbox_verify "$zip" "$dir/winbox.zip" || verify_rc=$?
+  if [ "$verify_rc" -eq 1 ]; then
+    printf 'error: WinBox checksum mismatch\n' >&2
+    return 1
+  fi
+  if [ "$verify_rc" -eq 2 ]; then
+    printf 'warning: WinBox checksum unavailable; continuing\n' >&2
+  fi
+  unzip -oq "$dir/winbox.zip" -d "$dir/winbox"
 }
 
 # internal: (re)write WinBox's desktop entry, in the menu and in its folder.
@@ -373,8 +461,7 @@ _uut_winbox_install_latest() {
   version=${version%%/*}
 
   tmp=$(mktemp -d) || return 1
-  if ! curl -fsSL --max-time 600 "https://download.mikrotik.com/$zip" -o "$tmp/winbox.zip" ||
-     ! unzip -oq "$tmp/winbox.zip" -d "$tmp/winbox"; then
+  if ! _uut_winbox_fetch "$zip" "$tmp"; then
     rm -rf "$tmp"
     return 1
   fi
@@ -455,11 +542,54 @@ _uut_pia_install_latest() {
   printf 'pia installed (%s)\n' "$version"
 }
 
+# internal: report pending user-tool updates without changing anything.
+_uut_check() {
+  local zip latest current release pia_latest pia_url pia_current
+
+  if [ ! -x "$HOME/Applications/WinBox/WinBox" ]; then
+    printf '%-32s %s· skipped (not installed)%s\n' winbox "$dim" "$rst"
+  else
+    zip=$(_uut_winbox_zip)
+    latest=$zip
+    latest=${latest#routeros/winbox/}
+    latest=${latest%%/*}
+    current=$(cat "$HOME/Applications/WinBox.version" 2>/dev/null)
+    if [ -z "$zip" ]; then
+      printf '%-32s %s? check unavailable%s\n' winbox "$dim" "$rst"
+    elif [ "$latest" = "$current" ]; then
+      printf '%-32s %s· up to date (%s)%s\n' winbox "$dim" "$current" "$rst"
+    else
+      printf '%-32s %s↑ update available (%s => %s)%s\n' winbox "$grn" "$current" "$latest" "$rst"
+    fi
+  fi
+
+  if [ ! -x /opt/piavpn/bin/piactl ]; then
+    printf '%-32s %s· skipped (not installed)%s\n' pia "$dim" "$rst"
+  else
+    pia_current=$(_uut_pia_version)
+    if ! release=$(_uut_pia_release); then
+      printf '%-32s %s? check unavailable%s\n' pia "$dim" "$rst"
+    else
+      read -r pia_latest pia_url <<<"$release"
+      if [ -z "$pia_current" ] || [ -z "$pia_latest" ]; then
+        printf '%-32s %s? check unavailable%s\n' pia "$dim" "$rst"
+      elif ! dpkg --compare-versions "$pia_latest" gt "$pia_current"; then
+        printf '%-32s %s· up to date (%s)%s\n' pia "$dim" "$pia_current" "$rst"
+      else
+        printf '%-32s %s↑ update available (%s => %s)%s\n' pia "$grn" "$pia_current" "$pia_latest" "$rst"
+      fi
+    fi
+  fi
+}
+
 # update-user-tools: update the user-facing apps that live outside apt.
-# Usage: update-user-tools [-v|--verbose]
+# Usage: update-user-tools [-v|--verbose|--check]
 update-user-tools() {
-  local verbose=0
-  case "${1:-}" in -v|--verbose) verbose=1 ;; esac
+  local verbose=0 check=0
+  case "${1:-}" in
+    -v|--verbose) verbose=1 ;;
+    --check) check=1 ;;
+  esac
 
   if [ "$(id -u)" -eq 0 ]; then
     printf 'update-user-tools: run as your user, not root (it updates files under %s)\n' "$HOME" >&2
@@ -469,6 +599,12 @@ update-user-tools() {
   local dim='' grn='' red='' rst=''
   if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     dim=$'\033[2m' grn=$'\033[32m' red=$'\033[31m' rst=$'\033[0m'
+  fi
+
+  if [ "$check" = 1 ]; then
+    printf '\n%s==> update-user-tools --check%s\n' "$dim" "$rst"
+    _uut_check
+    return 0
   fi
 
   printf '\n%s==> update-user-tools%s\n' "$dim" "$rst"
@@ -515,8 +651,7 @@ update-user-tools() {
         printf '%-32s %sx failed (desktop entry)%s\n' winbox "$red" "$rst"
         failed=1
       fi
-    elif _uut_run winbox curl -fsSL --max-time 600 "https://download.mikrotik.com/$zip" -o "$logdir/winbox.zip" &&
-         _uut_run winbox unzip -oq "$logdir/winbox.zip" -d "$logdir/winbox"; then
+    elif _uut_run winbox _uut_winbox_fetch "$zip" "$logdir"; then
       local new_hash old_hash
       new_hash=$(sha256sum "$logdir/winbox/WinBox" | cut -d' ' -f1)
       old_hash=$(sha256sum "$wb_dir/WinBox" | cut -d' ' -f1)
@@ -542,6 +677,9 @@ update-user-tools() {
       printf '%-32s %sx failed (download)%s\n' winbox "$red" "$rst"
       failed=1
     fi
+  fi
+  if [ -x "$wb_dir/WinBox" ]; then
+    dotfiles_state_tool winbox "$(cat "$wb_marker" 2>/dev/null)" || true
   fi
 
   # --- PIA VPN: official .run installer, no apt repo, needs root ---
@@ -573,7 +711,11 @@ update-user-tools() {
       fi
     fi
   fi
+  if [ -x "$pia_ctl" ]; then
+    dotfiles_state_tool pia "$(_uut_pia_version)" || true
+  fi
 
+  dotfiles_state_last_run update-user-tools || true
   if [ "$failed" = 1 ]; then
     printf '\n%slogs: %s%s\n' "$dim" "$logdir" "$rst"
     return 1
@@ -641,6 +783,8 @@ update-dotfiles() {
     printf '%-32s %s↑ updated %s => %s%s\n' dotfiles "$grn" "$before" "$after" "$rst"
     printf '%sopen a new shell to load the updated fragments%s\n' "$dim" "$rst"
   fi
+  dotfiles_state_repo "$repo" || true
+  dotfiles_state_last_run update-dotfiles || true
 }
 
 # update-all: dotfiles first, then the apt upgrade, developer tools and user tools.

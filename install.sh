@@ -8,6 +8,29 @@ stamp=$(date +%Y%m%d-%H%M%S)
 say() { printf '%s\n' "$*"; }
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 
+# shellcheck source=lib/dotfiles.sh
+. "$repo_dir/lib/dotfiles.sh"
+DOTFILES_REPO_ROOT="$repo_dir"
+
+# Install a repo file, backing up a differing target and recording it in state.
+install_tracked() {
+  local source=$1 target=$2 mode=$3 existed=1
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    if [ -f "$target" ] && cmp -s "$source" "$target"; then
+      dotfiles_state_file "$target" "${source#"$repo_dir"/}" file \
+        "$(dotfiles_sha256 "$source")" "${DOTFILES_BACKUP_SET:-}" 1 1 || true
+      return 0
+    fi
+    dotfiles_backup_file "$target" 1 || return 1
+  else
+    existed=0
+    dotfiles_backup_missing "$target" 1 || return 1
+  fi
+  install -D -m "$mode" "$source" "$target" || return 1
+  dotfiles_state_file "$target" "${source#"$repo_dir"/}" file \
+    "$(dotfiles_sha256 "$source")" "${DOTFILES_BACKUP_SET:-}" "$existed" 1 || true
+}
+
 usage() {
   cat <<'EOF'
 Usage: install.sh [--dry-run]
@@ -81,31 +104,41 @@ else
   say "packages/apt.txt has no entries; skipping apt"
 fi
 
+dotfiles_state_init || say "warning: could not initialize the state manifest"
+dotfiles_state_repo "$repo_dir" || true
+trap 'dotfiles_backup_finish >/dev/null 2>&1 || true' EXIT
+
 # --- shell fragments -------------------------------------------------------
 step="shell fragments"
 bashrc_d="$HOME/.bashrc.d"
 fragments=$(readlink -f "$repo_dir/bash")
+bashrc_d_existed=1
 if [ -L "$bashrc_d" ] && [ "$(readlink -f "$bashrc_d")" = "$fragments" ]; then
   say "~/.bashrc.d already points at $repo_dir/bash"
-elif [ -L "$bashrc_d" ] || [ -e "$bashrc_d" ]; then
-  mv "$bashrc_d" "$bashrc_d.bak-$stamp"
-  ln -s "$repo_dir/bash" "$bashrc_d"
-  say "moved the old ~/.bashrc.d to ~/.bashrc.d.bak-$stamp and linked $repo_dir/bash"
 else
+  if [ -L "$bashrc_d" ] || [ -e "$bashrc_d" ]; then
+    dotfiles_backup_file "$bashrc_d" 1
+    rm -rf "$bashrc_d"
+  else
+    bashrc_d_existed=0
+    dotfiles_backup_missing "$bashrc_d" 1
+  fi
   ln -s "$repo_dir/bash" "$bashrc_d"
   say "linked ~/.bashrc.d -> $repo_dir/bash"
 fi
+dotfiles_state_file "$bashrc_d" "bash" symlink "" "${DOTFILES_BACKUP_SET:-}" "$bashrc_d_existed" 1 || true
 
 # --- ~/.bashrc marker block ------------------------------------------------
 step="~/.bashrc marker block"
 bashrc="$HOME/.bashrc"
-[ -e "$bashrc" ] || : > "$bashrc"
+bashrc_existed=1
+if [ ! -e "$bashrc" ]; then
+  bashrc_existed=0
+  dotfiles_backup_missing "$bashrc"
+fi
 block_start='### START: User Specific Aliases and Functions ###'
 block_end='### END: User Specific Aliases and Functions ###'
-
-render_block() {
-  cat <<'EOF'
-### START: User Specific Aliases and Functions ###
+block_content=$(cat <<'EOF'
 # Managed by install.sh from the dotfiles repo; edit ~/.bashrc.d/*.sh instead.
 if [ -d "$HOME/.bashrc.d" ]; then
   for _f in "$HOME"/.bashrc.d/*.sh; do
@@ -113,51 +146,118 @@ if [ -d "$HOME/.bashrc.d" ]; then
   done
   unset _f
 fi
-### END: User Specific Aliases and Functions ###
 EOF
-}
-
-has_start=0
-has_end=0
-if grep -qxF "$block_start" "$bashrc"; then has_start=1; fi
-if grep -qxF "$block_end" "$bashrc"; then has_end=1; fi
-[ "$has_start" = "$has_end" ] || die "~/.bashrc has an unmatched marker block; fix it by hand first"
-if [ "$has_start" = 1 ]; then
-  start_line=$(grep -nxF "$block_start" "$bashrc" | head -1 | cut -d: -f1)
-  end_line=$(grep -nxF "$block_end" "$bashrc" | head -1 | cut -d: -f1)
-  [ "$start_line" -lt "$end_line" ] || die "~/.bashrc has END before START in its marker block; fix it by hand first"
+)
+if ! dotfiles_upsert_block "$bashrc" "$block_start" "$block_end" "$block_content" "$bashrc_existed"; then
+  die "~/.bashrc has an unmatched marker block; fix it by hand first"
 fi
+say "~/.bashrc marker block is up to date"
+dotfiles_state_file "$bashrc" "install.sh" marker-block \
+  "$(dotfiles_sha256 "$bashrc")" "${DOTFILES_BACKUP_SET:-}" "$bashrc_existed" 1 || true
 
-tmp=$(mktemp)
-if [ "$has_start" = 1 ]; then
-  {
-    awk -v s="$block_start" '$0==s{exit} {print}' "$bashrc"
-    render_block
-    awk -v e="$block_end" 'p{print} $0==e{p=1}' "$bashrc"
-  } > "$tmp"
+# --- ~/.profile.d fragments ------------------------------------------------
+step="~/.profile.d"
+profile_d="$HOME/.profile.d"
+profile_fragments="$repo_dir/profile"
+profile_existed=1
+if [ -L "$profile_d" ] && [ "$(readlink -f "$profile_d")" = "$profile_fragments" ]; then
+  say "~/.profile.d already points at $profile_fragments"
 else
-  {
-    cat "$bashrc"
-    printf '\n'
-    render_block
-  } > "$tmp"
+  if [ -L "$profile_d" ] || [ -e "$profile_d" ]; then
+    dotfiles_backup_file "$profile_d" 1
+    rm -rf "$profile_d"
+  else
+    profile_existed=0
+    dotfiles_backup_missing "$profile_d" 1
+  fi
+  ln -s "$profile_fragments" "$profile_d"
+  say "linked ~/.profile.d -> $profile_fragments"
 fi
+dotfiles_state_file "$profile_d" "profile" symlink "" "${DOTFILES_BACKUP_SET:-}" "$profile_existed" 1 || true
 
-if cmp -s "$tmp" "$bashrc"; then
-  say "~/.bashrc already up to date"
-else
-  cp -p "$bashrc" "$bashrc.bak-$stamp"
-  cat "$tmp" > "$bashrc"
-  say "updated the marker block in ~/.bashrc (backup: ~/.bashrc.bak-$stamp)"
+# --- ~/.profile marker block ------------------------------------------------
+step="~/.profile marker block"
+profile="$HOME/.profile"
+profile_existed=1
+if [ ! -e "$profile" ]; then
+  profile_existed=0
+  dotfiles_backup_missing "$profile"
 fi
-rm -f "$tmp"
+profile_start='### START: dotfiles login environment ###'
+profile_end='### END: dotfiles login environment ###'
+profile_content=$(cat <<'EOF'
+# Managed by install.sh from the dotfiles repo; edit ~/.profile.d/*.sh instead.
+if [ -d "$HOME/.profile.d" ]; then
+  for _f in "$HOME"/.profile.d/*.sh; do
+    [ -r "$_f" ] && . "$_f"
+  done
+  unset _f
+fi
+EOF
+)
+if ! dotfiles_upsert_block "$profile" "$profile_start" "$profile_end" "$profile_content" "$profile_existed"; then
+  die "~/.profile has an unmatched marker block; fix it by hand first"
+fi
+say "~/.profile marker block is up to date"
+dotfiles_state_file "$profile" "install.sh" marker-block \
+  "$(dotfiles_sha256 "$profile")" "${DOTFILES_BACKUP_SET:-}" "$profile_existed" 1 || true
+
+# --- ~/.gitconfig include ---------------------------------------------------
+step="~/.gitconfig"
+gitconfig="$HOME/.gitconfig"
+gitconfig_existed=1
+if [ ! -e "$gitconfig" ]; then
+  gitconfig_existed=0
+  dotfiles_backup_missing "$gitconfig"
+fi
+git_start='# >>> dotfiles managed include >>>'
+git_end='# <<< dotfiles managed include <<<'
+git_content=$(printf '[include]\n    path = "%s"\n' "$repo_dir/home/gitconfig")
+if ! dotfiles_upsert_block "$gitconfig" "$git_start" "$git_end" "$git_content" "$gitconfig_existed"; then
+  die "~/.gitconfig has an unmatched marker block; fix it by hand first"
+fi
+say "~/.gitconfig includes $repo_dir/home/gitconfig"
+dotfiles_state_file "$gitconfig" "home/gitconfig" include-block \
+  "$(dotfiles_sha256 "$repo_dir/home/gitconfig")" "${DOTFILES_BACKUP_SET:-}" "$gitconfig_existed" 1 || true
 
 # --- retired ~/.bash_aliases -----------------------------------------------
 step="~/.bash_aliases"
 aliases="$HOME/.bash_aliases"
 if [ -e "$aliases" ] || [ -L "$aliases" ]; then
-  mv "$aliases" "$aliases.bak-$stamp"
-  say "moved ~/.bash_aliases to ~/.bash_aliases.bak-$stamp (contents live in the repo now)"
+  dotfiles_backup_file "$aliases" 1
+  rm -f "$aliases"
+  say "removed ~/.bash_aliases (backup kept)"
+  dotfiles_state_file "$aliases" "retired" file "" "${DOTFILES_BACKUP_SET:-}" 1 1 || true
+fi
+
+# --- dotfiles CLI and update-check timer ------------------------------------
+step="dotfiles CLI"
+install_tracked "$repo_dir/bin/dotfiles" "$HOME/.local/bin/dotfiles" 755
+
+step="OpenCode config snapshot"
+if [ -d "$HOME/.config/opencode" ]; then
+  if dotfiles_backup_opencode; then
+    say "snapshotted OpenCode configs (redacted)"
+    if [ -n "${DOTFILES_BACKUP_SET:-}" ]; then
+      dotfiles_state_merge '.opencode={snapshot:$path,redacted:true} | .updated_at=$now' \
+        --arg path "$DOTFILES_BACKUP_SET" --arg now "$(dotfiles_now)" || true
+    fi
+  else
+    say "warning: could not snapshot OpenCode configs"
+  fi
+fi
+
+step="update-check timer"
+install_tracked "$repo_dir/systemd/user/dotfiles-update-check.service" \
+  "$HOME/.config/systemd/user/dotfiles-update-check.service" 644
+install_tracked "$repo_dir/systemd/user/dotfiles-update-check.timer" \
+  "$HOME/.config/systemd/user/dotfiles-update-check.timer" 644
+if systemctl --user daemon-reload &&
+   systemctl --user enable dotfiles-update-check.timer >/dev/null 2>&1 &&
+   systemctl --user restart dotfiles-update-check.timer >/dev/null 2>&1; then
+  say "update-check timer enabled"
+else
+  say "warning: could not enable dotfiles-update-check.timer; run systemctl --user enable --now dotfiles-update-check.timer"
 fi
 
 # --- third-party repositories and apps -------------------------------------
@@ -426,6 +526,12 @@ tmpdir=$(mktemp -d)
 # opencode desktop: the latest API URL redirects to the current versioned .deb
 if [ "$arch" = amd64 ] || [ "$arch" = arm64 ]; then
   curl -fsSL "https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-linux-$arch.deb" -o "$tmpdir/opencode-desktop.deb"
+  opencode_sha=$(dotfiles_opencode_deb_sha256 "$arch")
+  if [ -z "$opencode_sha" ]; then
+    say "warning: opencode desktop checksum unavailable; continuing"
+  elif ! dotfiles_verify_sha256 "$tmpdir/opencode-desktop.deb" "$opencode_sha"; then
+    die "opencode desktop checksum mismatch"
+  fi
   sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$tmpdir/opencode-desktop.deb"
 fi
 
@@ -461,9 +567,9 @@ fi
 step="PIA + Lerd DNS"
 if [ -x /opt/piavpn/bin/piactl ] &&
    { command -v lerd >/dev/null 2>&1 || [ -d "$HOME/.local/share/lerd" ]; }; then
-  install -D -m 755 "$repo_dir/bin/pia-dns-helper.sh" "$HOME/.local/bin/pia-dns-helper.sh"
-  install -D -m 644 "$repo_dir/systemd/user/pia-dns-helper.service" \
-    "$HOME/.config/systemd/user/pia-dns-helper.service"
+  install_tracked "$repo_dir/bin/pia-dns-helper.sh" "$HOME/.local/bin/pia-dns-helper.sh" 755
+  install_tracked "$repo_dir/systemd/user/pia-dns-helper.service" \
+    "$HOME/.config/systemd/user/pia-dns-helper.service" 644
 
   pia_ips=$(curl -fsSL --max-time 8 -H 'accept: application/dns-json' \
       'https://cloudflare-dns.com/dns-query?name=api.privateinternetaccess.com&type=A' 2>/dev/null |
@@ -520,6 +626,9 @@ fi
 
 say "Developer and user tools installed."
 
+dotfiles_state_last_run install || true
 say ""
 say "Done. Open a new shell or run: source ~/.bashrc"
 say "Docker: log out and back in (or run: newgrp docker) to use docker without sudo."
+say "Manual sign-in steps: docs/post-install.md"
+say "Installed state: ~/.local/state/dotfiles/state.json"

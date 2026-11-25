@@ -1,5 +1,6 @@
 # Sourced fragments, not standalone scripts.
 shell=bash
 # "~" in quoted messages is intentional; log redirects write to user-owned
-# temp dirs, so sudo does not need to own them.
-disable=SC2088,SC2024
+# temp dirs, so sudo does not need to own them. jq filters use $variables
+# intentionally, and sourced paths are resolved at runtime.
+disable=SC2088,SC2024,SC2016,SC1091
