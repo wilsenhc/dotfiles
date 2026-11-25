@@ -515,6 +515,11 @@ nvm install-latest-npm
 curl -fsSL https://bun.sh/install | bash
 export PATH="$HOME/.bun/bin:$PATH"
 
+# git-removed-branches is a Node CLI; Bun owns the global package install.
+step="git-removed-branches"
+bun install -g git-removed-branches
+dotfiles_state_tool git-removed-branches "$(git-removed-branches --version 2>/dev/null)" bun || true
+
 # lerd also provides the composer shim used by its containers
 curl -fsSL https://lerd.sh/install.sh | bash
 

@@ -15,7 +15,7 @@ Implemented:
 - apt package installation and removal, plus the vendor repositories listed below
 - shell fragments loaded from `~/.bashrc.d`, with aliases and the update commands
 - Git config, login environment, host-local `.local` includes, and OpenCode config snapshots
-- backup sets, state manifest, `dotfiles doctor`, restore, and the weekly update check
+- backup sets, state manifest, `dotfiles doctor`, restore, and the daily update check
 - non-apt developer/user tools, global AI skills, and the PIA + lerd DNS helper
 - best-effort checksum verification and CI for ShellCheck and installer flags
 
@@ -74,9 +74,9 @@ Any clone location works; the script resolves paths from its own directory.
 6. Appends a marker block to `~/.profile` that sources `~/.profile.d/*.sh`.
 7. Adds a managed `[include]` block to `~/.gitconfig`, preserving user settings and keeping identity in `~/.gitconfig.local`.
 8. Removes `~/.bash_aliases` after backing it up, since its contents now live in the repo.
-9. Installs the `dotfiles` CLI, snapshots OpenCode configs, and enables the weekly update-check timer.
+9. Installs the `dotfiles` CLI, snapshots OpenCode configs, and enables the daily update-check timer.
 10. Adds the vendor repositories below and installs their apps.
-11. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, PIA VPN, GitKraken), the global skills manifest, and Impeccable's OpenCode skill and `/impeccable` command. When lerd is also present, it installs the PIA DNS helper and zone pin.
+11. Installs the non-apt developer/user tools (nvm, Bun, lerd, opencode, herdr, WinBox, PIA VPN, GitKraken, git-removed-branches), the global skills manifest, and Impeccable's OpenCode skill and `/impeccable` command. When lerd is also present, it installs the PIA DNS helper and zone pin.
 
 Files it replaces under `$HOME` are copied to `~/.local/state/dotfiles/backups/<timestamp>/` with a manifest; the last ten sets are kept. `dotfiles restore <timestamp>` puts a set back. Conflicting apt source files keep a `.bak-<timestamp>` beside the original. Running the installer again is safe: completed steps are repeated idempotently, and the tool installers may pick up newer upstream releases. Open a new shell afterwards, or run `source ~/.bashrc`.
 
@@ -91,7 +91,7 @@ update-all -v       # full command output
 
 It runs `update-dotfiles`, `update-apt-all`, `update-dev-tools` and `update-user-tools`, and each can also be run alone. See [docs/bashrc.md](docs/bashrc.md) for the per-tool behavior.
 
-`dotfiles update-check` reports repository commits and tool updates without installing anything. The weekly user timer runs it on Monday at 10:00, sends a desktop notification when something is pending, and logs to `~/.local/state/dotfiles/update-check.log`.
+`dotfiles update-check` reports repository commits and tool updates without installing anything. The daily user timer runs it at 10:00, sends a desktop notification when something is pending, and logs to `~/.local/state/dotfiles/update-check.log`.
 
 ## Versioning
 
@@ -162,6 +162,7 @@ Not everything ships through apt. `install.sh` also installs:
 | WinBox | latest MikroTik zip into `~/Applications/WinBox`; `update-user-tools` keeps it current |
 | PIA VPN | official Linux `.run` from the `pia-foss/desktop` release into `/opt/piavpn`; `update-user-tools` keeps it current |
 | GitKraken | current official `.deb` (amd64) |
+| git-removed-branches | `bun install -g git-removed-branches`; run `git removed-branches` to list and `git removed-branches --prune` to delete |
 | Impeccable | `bunx impeccable install --providers=opencode -y --global`, then `bunx impeccable update -y --global` |
 | Global AI/agent skills | `bunx skills add <source> -g --all` for every entry in `packages/skills.txt` |
 

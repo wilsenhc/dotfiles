@@ -25,3 +25,4 @@
     lg = log --oneline --graph --decorate --all
     last = log -1 --stat
     unstage = reset HEAD --
+    removed-branches = !git-removed-branches

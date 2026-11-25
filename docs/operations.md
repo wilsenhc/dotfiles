@@ -58,7 +58,7 @@ Only the ten most recent sets are kept. A set with no entries is discarded.
 
 ## Update checks
 
-The weekly user timer runs `dotfiles update-check` on Monday at 10:00 with a randomized delay:
+The daily user timer runs `dotfiles update-check` at 10:00 with a randomized delay:
 
 - `systemd/user/dotfiles-update-check.timer`
 - `systemd/user/dotfiles-update-check.service`
@@ -83,7 +83,7 @@ Verification is best-effort because publishers differ:
 | Artifact | Verification |
 | --- | --- |
 | apt packages and vendor repositories | APT `InRelease` signatures and package hashes |
-| Impeccable | npm registry integrity verified by Bun |
+| Impeccable, git-removed-branches | npm registry integrity verified by Bun |
 | opencode desktop | SHA-256 from the desktop manifest |
 | WinBox | SHA-256 from MikroTik's `.sha256` sidecar |
 | herdr | its official installer verifies the published SHA-256 |

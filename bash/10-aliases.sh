@@ -114,7 +114,7 @@ update-dev-tools() {
   local arch
   arch=$(dpkg --print-architecture 2>/dev/null) || arch=amd64
   local tool label cmd before after rc failed=0 skip latest
-  for tool in node npm bun lerd opencode opencode-gui herdr-core herdr herdr-app herdr-plugins impeccable global-skills gitkraken; do
+  for tool in node npm bun lerd opencode opencode-gui herdr-core herdr herdr-app herdr-plugins impeccable global-skills git-removed-branches gitkraken; do
     label=$tool
     if [ "$tool" = herdr ]; then label=herdr-cli; fi
     if ! _udt_present "$tool"; then
@@ -172,6 +172,11 @@ update-dev-tools() {
         ;;
       # -g keeps it to ~/.agents/skills, -y so it never stops on a prompt
       global-skills) cmd=(bunx skills update -g -y) ;;
+      git-removed-branches)
+        latest=$(bun info git-removed-branches version 2>/dev/null)
+        [ -n "$latest" ] && [ "$latest" = "$before" ] && skip=1
+        cmd=(bun install -g git-removed-branches)
+        ;;
       gitkraken)
         # Same shape as opencode-gui: a .deb, no apt repo, so root is needed
         # and sudo -n fails fast rather than prompting. The download URL

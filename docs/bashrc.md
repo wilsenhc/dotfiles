@@ -73,6 +73,7 @@ update-dev-tools --check    # report pending updates without changing anything
 | `herdr-plugins` | `herdr plugin update --yes` (after the herdr CLI) | `herdr plugin list --json` |
 | `impeccable` | `timeout 600 bunx impeccable@latest update -y --global`, only when behind | `version:` in the installed `SKILL.md` |
 | `global-skills` | `bunx skills update -g -y` | hash of `~/.agents/.skill-lock.json` |
+| `git-removed-branches` | `bun install -g git-removed-branches`, only when behind | `git-removed-branches --version` |
 | `gitkraken` | download + `sudo -n dpkg -i` the latest .deb, only when newer | `dpkg-query` |
 
 Notes:
@@ -154,7 +155,7 @@ pia                              · already latest (3.8.0+08539)
 - **WinBox**: distributed by MikroTik as a zip, manually unpacked into `~/Applications/WinBox`; there is no package manager. `install.sh` installs it when missing; this function updates an existing copy. The current version is read from `mikrotik.com/download/winbox` and remembered in `~/Applications/WinBox.version`. When it differs, the zip is downloaded and its binary compared by SHA-256 with the installed one: identical writes the marker, different replaces `WinBox` and `assets/`. Every run also rewrites the desktop entry, both `~/.local/share/applications/winbox.desktop` and the copy inside the install folder, so the paths always match the current location. User data in `~/.local/share/MikroTik/WinBox` is untouched. MikroTik publishes no checksum for the zip, so that download is HTTPS-only.
 - **PIA VPN**: distributed as an official makeself `.run` installer, installed under `/opt/piavpn` with a systemd service. The installed version comes from `piactl --version`; the release tag and `.run` URL come from the `pia-foss/desktop` GitHub release, and the build number in the file name makes the full version (`3.8.0+08539`). Only when it is newer is the roughly 78 MB installer downloaded and rerun; it upgrades in place and keeps settings. Because it writes to `/opt` and systemd, the update authenticates sudo up front; `update-all` usually still has the timestamp from `update-apt-all`. The PIA + lerd DNS helper and zone pin are installed separately by `install.sh`; see [pia-lerd.md](pia-lerd.md).
 - The ArtCraft Launcher and Craft apps are installed from ArtCraft's APT repository by `install.sh`, so `update-apt-all` keeps them current and they no longer need their own updater.
-- `--check` reports WinBox and PIA updates without downloading or installing; it is what the weekly timer calls.
+- `--check` reports WinBox and PIA updates without downloading or installing; it is what the daily timer calls.
 - WinBox downloads are verified against MikroTik's `.sha256` sidecar before unzipping.
 - Failures mark the row and keep the log directory, which is printed at the end; exit status is `1` if any item failed.
 - Set `NO_COLOR=1` to disable the color output.
@@ -176,7 +177,7 @@ update-all -v               # all four, with full command output
 
 ## State, backups and the update timer
 
-`install.sh` installs `~/.local/bin/dotfiles`. It manages the state manifest, backup sets, the read-only doctor, restore, and the weekly notification-only update check. See [operations.md](operations.md) and [configuration.md](configuration.md).
+`install.sh` installs `~/.local/bin/dotfiles`. It manages the state manifest, backup sets, the read-only doctor, restore, and the daily notification-only update check. See [operations.md](operations.md) and [configuration.md](configuration.md).
 
 ## 30-xone-pair.sh
 

@@ -1,8 +1,8 @@
 [Unit]
-Description=Weekly dotfiles update check
+Description=Daily dotfiles update check
 
 [Timer]
-OnCalendar=Mon 10:00
+OnCalendar=*-*-* 10:00:00
 Persistent=true
 RandomizedDelaySec=1h
 

@@ -9,7 +9,9 @@
 - `fetch.prune=true`
 - `push.autoSetupRemote=true`
 - `color.ui=auto`
-- aliases `st`, `co`, `br`, `lg`, `last`, `unstage`
+- aliases `st`, `co`, `br`, `lg`, `last`, `unstage`, and `removed-branches`
+
+`git removed-branches` lists local branches whose remote was deleted; `git removed-branches --prune` deletes them. The command comes from the globally installed `git-removed-branches` package, and the alias is defined in `home/gitconfig`.
 
 `install.sh` adds a managed `[include]` block to `~/.gitconfig` rather than symlinking the file, so `git config --global` never writes into the repository. The managed file includes `~/.gitconfig.local`, which is where the machine-specific identity belongs:
 
